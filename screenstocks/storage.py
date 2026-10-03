@@ -152,6 +152,8 @@ class Storage:
         # Rows stored by older versions used the bare (reused) id; the game re-exports
         # its last results, so they are simply rebuilt with the unique key.
         self.conn.execute("DELETE FROM command_results WHERE id NOT LIKE '%#%#%'")
+        if "repeat" not in {r[1] for r in self.conn.execute("PRAGMA table_info(rules)")}:
+            self.conn.execute("ALTER TABLE rules ADD COLUMN repeat INTEGER NOT NULL DEFAULT 0")
         self.conn.commit()
         self._pos_cache: Optional[dict] = None
 
@@ -452,16 +454,17 @@ class Storage:
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
     def add_rule(self, stock_id: str, kind: str, side: str, mode: str, value: float,
-                 percent: int, confirm_s: float, created_ms: int) -> int:
+                 percent: int, confirm_s: float, created_ms: int, repeat: bool = False) -> int:
         cur = self.conn.execute(
-            """INSERT INTO rules (stock_id, kind, side, mode, value, percent, confirm_s, enabled, status, created_ms)
-               VALUES (?,?,?,?,?,?,?,1,'aktiv',?)""",
-            (stock_id, kind, side, mode, value, percent, confirm_s, created_ms))
+            """INSERT INTO rules (stock_id, kind, side, mode, value, percent, confirm_s, enabled, status, created_ms, repeat)
+               VALUES (?,?,?,?,?,?,?,1,'aktiv',?,?)""",
+            (stock_id, kind, side, mode, value, percent, confirm_s, created_ms, int(repeat)))
         self.conn.commit()
         return cur.lastrowid
 
     def update_rule(self, rule_id: int, **fields) -> None:
-        allowed = {"enabled", "extreme", "status", "triggered_ms"}
+        allowed = {"enabled", "extreme", "status", "triggered_ms",
+                   "stock_id", "kind", "side", "mode", "value", "percent", "confirm_s", "repeat"}
         assert set(fields) <= allowed, fields
         sets = ", ".join(f"{k}=?" for k in fields)
         self.conn.execute(f"UPDATE rules SET {sets} WHERE id=?", (*fields.values(), rule_id))

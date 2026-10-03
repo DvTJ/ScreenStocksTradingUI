@@ -871,6 +871,7 @@ class AutomationTab(ttk.Frame):
         ("price", "common.price", 85, "e"),
         ("dist", "auto.col_distance", 80, "e"),
         ("confirm", "auto.col_confirm", 60, "e"),
+        ("repeat", "auto.col_repeat", 50, "center"),
         ("active", "auto.col_active", 50, "center"),
         ("status", "common.status", 260, "w"),
     ]
@@ -905,6 +906,8 @@ class AutomationTab(ttk.Frame):
         self.mode_var = tk.StringVar(value=mode_name("pct"))
         self.pct_var = tk.StringVar(value="100")
         self.confirm_var = tk.StringVar(value="0")
+        self.repeat_var = tk.BooleanVar(value=False)
+        self._editing: Optional[int] = None
 
         def field(col, title, widget):
             ttk.Label(form, text=title, style="CardMuted.TLabel").grid(row=0, column=col, sticky="w", padx=(0, 10))
@@ -932,12 +935,19 @@ class AutomationTab(ttk.Frame):
                                                    justify="right", bg=THEME["panel"], fg=THEME["fg"],
                                                    buttonbackground=THEME["panel_alt"], insertbackground=THEME["fg"],
                                                    relief="flat"))
-        ttk.Button(form, text=t("auto.use_price"), command=self._use_price).grid(row=1, column=6, padx=(0, 6))
-        tk.Button(form, text=t("auto.add"), command=self._add_rule, bg=THEME["accent"], fg="#0d1117",
-                  activebackground=blend(THEME["accent"], "#ffffff", 0.8), font=THEME["font_bold"],
-                  relief="flat", bd=0, padx=12, pady=3, cursor="hand2").grid(row=1, column=7)
+        tk.Checkbutton(form, text=t("auto.repeat"), variable=self.repeat_var, bg=THEME["panel_alt"], fg=THEME["fg"],
+                       selectcolor=THEME["panel"], activebackground=THEME["panel_alt"], activeforeground=THEME["fg"],
+                       highlightthickness=0, bd=0).grid(row=1, column=6, padx=(0, 10))
+        ttk.Button(form, text=t("auto.use_price"), command=self._use_price).grid(row=1, column=7, padx=(0, 6))
+        self.add_btn = tk.Button(form, text=t("auto.add"), command=self._add_rule, bg=THEME["accent"], fg="#0d1117",
+                                 activebackground=blend(THEME["accent"], "#ffffff", 0.8), font=THEME["font_bold"],
+                                 relief="flat", bd=0, padx=12, pady=3, cursor="hand2")
+        self.add_btn.grid(row=1, column=8)
+        self.cancel_btn = ttk.Button(form, text=t("auto.cancel_edit"), command=self._cancel_edit)
+        self.cancel_btn.grid(row=1, column=9, padx=(6, 0))
+        self.cancel_btn.grid_remove()
         self.help = ttk.Label(form, text="", style="CardMuted.TLabel", wraplength=1100, justify="left")
-        self.help.grid(row=2, column=0, columnspan=8, sticky="w", pady=(6, 0))
+        self.help.grid(row=2, column=0, columnspan=10, sticky="w", pady=(6, 0))
         for var in (self.kind_var, self.side_var, self.mode_var, self.pct_var, self.value_var, self.stock_var):
             var.trace_add("write", lambda *_: self._update_form())
 
@@ -950,6 +960,7 @@ class AutomationTab(ttk.Frame):
         ttk.Label(bar, text=t("auto.rules"), style="Section.TLabel").pack(side="left", padx=4)
         ttk.Button(bar, text=t("auto.delete"), command=self._delete).pack(side="right", padx=2)
         ttk.Button(bar, text=t("auto.toggle"), command=self._toggle_rule).pack(side="right", padx=2)
+        ttk.Button(bar, text=t("auto.edit"), command=self._edit_rule).pack(side="right", padx=2)
         f, self.rules_tree = scrolled(rules_frame, lambda m: SortableTree(m, self.RULE_COLUMNS, height=8))
         f.pack(fill="both", expand=True)
         self.rules_tree.tag_configure("off", foreground=THEME["muted"])
@@ -983,7 +994,30 @@ class AutomationTab(ttk.Frame):
         mode = "price" if kind in ("buy_limit", "short_limit") else \
             "pct" if kind == "trailing_stop" else self._key(MODE_KEYS, mode_name, self.mode_var.get())
         return dict(id=0, stock_id=self.stock_var.get(), kind=kind, side=self._key(SIDE_KEYS, side_name, self.side_var.get()),
-                    mode=mode, value=value, percent=pct, confirm_s=confirm, extreme=None)
+                    mode=mode, value=value, percent=pct, confirm_s=confirm, extreme=None,
+                    repeat=int(self.repeat_var.get()))
+
+    def _edit_rule(self) -> None:
+        rid = self._selected_rule_id()
+        r = next((r for r in self._ctx.db.rules() if r["id"] == rid), None) if self._ctx and rid else None
+        if not r:
+            return
+        self._editing = rid
+        self.stock_var.set(r["stock_id"])
+        self.kind_var.set(kind_name(r["kind"]))
+        self.side_var.set(side_name(r["side"]))
+        self.mode_var.set(mode_name(r["mode"]))
+        self.value_var.set(f"{r['value']:g}".replace(".", fmt.decimal_sep()))
+        self.pct_var.set(str(r["percent"]))
+        self.confirm_var.set(f"{r['confirm_s']:g}")
+        self.repeat_var.set(bool(r["repeat"]))
+        self.add_btn.configure(text=t("auto.save"))
+        self.cancel_btn.grid()
+
+    def _cancel_edit(self) -> None:
+        self._editing = None
+        self.add_btn.configure(text=t("auto.add"))
+        self.cancel_btn.grid_remove()
 
     def _update_form(self) -> None:
         kind = self._key(KIND_KEYS, kind_name, self.kind_var.get())
@@ -1043,8 +1077,20 @@ class AutomationTab(ttk.Frame):
                 (not needs_position(rule) or has_position(rule, pos)) and not messagebox.askyesno(
                     t("auto.rule_title"), t("auto.would_fire", price=fmt.price(last[1])), parent=self):
             return
+        if self._editing:
+            rid = self._editing
+            ctx.db.update_rule(rid, stock_id=rule["stock_id"], kind=rule["kind"], side=rule["side"], mode=rule["mode"],
+                               value=rule["value"], percent=rule["percent"], confirm_s=rule["confirm_s"],
+                               repeat=rule["repeat"], extreme=None, status=t("rule.st.active"))
+            ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
+                            t("rule.log.edited", kind=kind_name(rule["kind"]),
+                              trigger=describe_trigger(rule, None, fmt.price, fmt.decimal_sep()), p=rule["percent"],
+                              rep=" ∞" if rule["repeat"] else ""))
+            self._cancel_edit()
+            self.app.refresh_now()
+            return
         rid = ctx.db.add_rule(rule["stock_id"], rule["kind"], rule["side"], rule["mode"], rule["value"],
-                              rule["percent"], rule["confirm_s"], int(time.time() * 1000))
+                              rule["percent"], rule["confirm_s"], int(time.time() * 1000), bool(rule["repeat"]))
         ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                         t("rule.log.created", kind=kind_name(rule["kind"]),
                           side=side_name(rule["side"]) if rule["kind"] in EXIT_KINDS else "",
@@ -1083,6 +1129,8 @@ class AutomationTab(ttk.Frame):
             return
         if messagebox.askyesno(t("auto.delete_title"), t("auto.delete_text", id=rid), parent=self):
             self._ctx.db.delete_rule(rid)
+            if self._editing == rid:
+                self._cancel_edit()
             self._ctx.db.log_rule(int(time.time() * 1000), rid, "", t("rule.log.deleted"))
             self.app.refresh_now()
 
@@ -1112,9 +1160,10 @@ class AutomationTab(ttk.Frame):
                 r["id"], r["stock_id"], kind_name(r["kind"]),
                 side_name(r["side"]) if r["kind"] in EXIT_KINDS else "",
                 describe_trigger(r, trig, fmt.price, fmt.decimal_sep()), fmt.pct_int(r["percent"]), fmt.price(price), fmt.pct(dist),
-                f"{r['confirm_s']:g} s" if r["confirm_s"] else "–", "✔" if r["enabled"] else "–", r["status"] or ""),
+                f"{r['confirm_s']:g} s" if r["confirm_s"] else "–", "∞" if r["repeat"] else "–",
+                "✔" if r["enabled"] else "–", r["status"] or ""),
                 dict(id=r["id"], stock=r["stock_id"], kind=r["kind"], side=r["side"], trigger=trig, pct=r["percent"],
-                     price=price, dist=dist, confirm=r["confirm_s"], active=r["enabled"], status=r["status"]),
+                     price=price, dist=dist, confirm=r["confirm_s"], repeat=r["repeat"], active=r["enabled"], status=r["status"]),
                 tags))
         self.rules_tree.set_rows(rows)
 
