@@ -4,8 +4,10 @@ Every thread opens its own Storage instance; WAL mode lets the GUI read
 while the collector writes.
 """
 
+import bisect
 import csv
 import sqlite3
+import statistics
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
@@ -116,7 +118,9 @@ CREATE TABLE IF NOT EXISTS rules (
     extreme      REAL,
     status       TEXT    DEFAULT '',
     created_ms   INTEGER,
-    triggered_ms INTEGER
+    triggered_ms INTEGER,
+    repeat       INTEGER NOT NULL DEFAULT 0,
+    runs         INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS rule_log (
@@ -125,6 +129,16 @@ CREATE TABLE IF NOT EXISTS rule_log (
     rule_id  INTEGER,
     stock_id TEXT,
     message  TEXT
+);
+
+-- Dividend payouts, detected from cash increases at the full minute (the export has no
+-- payout data). base = sum(owned * price * dividendRate); factor = amount / base is the
+-- dividend multiplier of the player (upgrades/level).
+CREATE TABLE IF NOT EXISTS dividends (
+    server_ms INTEGER PRIMARY KEY,
+    amount    REAL NOT NULL,
+    base      REAL,
+    factor    REAL
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -152,10 +166,18 @@ class Storage:
         # Rows stored by older versions used the bare (reused) id; the game re-exports
         # its last results, so they are simply rebuilt with the unique key.
         self.conn.execute("DELETE FROM command_results WHERE id NOT LIKE '%#%#%'")
-        if "repeat" not in {r[1] for r in self.conn.execute("PRAGMA table_info(rules)")}:
-            self.conn.execute("ALTER TABLE rules ADD COLUMN repeat INTEGER NOT NULL DEFAULT 0")
+        self._migrate()
         self.conn.commit()
         self._pos_cache: Optional[dict] = None
+        self._prev_cash: Optional[tuple[int, float]] = None
+
+    def _migrate(self) -> None:
+        """Add columns introduced after a database was first created."""
+        rule_cols = {r[1] for r in self.conn.execute("PRAGMA table_info(rules)")}
+        if "repeat" not in rule_cols:
+            self.conn.execute("ALTER TABLE rules ADD COLUMN repeat INTEGER NOT NULL DEFAULT 0")
+        if "runs" not in rule_cols:
+            self.conn.execute("ALTER TABLE rules ADD COLUMN runs INTEGER NOT NULL DEFAULT 0")
 
     def close(self) -> None:
         self.conn.close()
@@ -207,7 +229,8 @@ class Storage:
             )
 
         if p is not None:
-            self._store_positions(snap.server_time_ms, p.positions)
+            changed = self._store_positions(snap.server_time_ms, p.positions)
+            self._detect_dividend(snap, changed)
 
         c.executemany(
             """INSERT OR IGNORE INTO market_news (id, created_ms, stock_id, price, kind, lookback_minutes)
@@ -232,7 +255,8 @@ class Storage:
         c.commit()
         return True
 
-    def _store_positions(self, server_ms: int, positions) -> None:
+    def _store_positions(self, server_ms: int, positions) -> bool:
+        """Write changed positions; returns True if anything changed (= a trade happened)."""
         if self._pos_cache is None:
             self._pos_cache = {
                 sid: tuple(vals) for sid, *vals in self._latest_positions_rows()
@@ -258,6 +282,95 @@ class Storage:
                    VALUES (?,?,?,?,?,?)""",
                 rows,
             )
+        return bool(rows)
+
+    # ------------------------------------------------------------- dividends
+
+    # A payout lands within a few seconds after the full minute (server clock).
+    DIVIDEND_WINDOW_MS = 4000
+    DIVIDEND_FACTOR_RANGE = (0.2, 50.0)
+
+    def _detect_dividend(self, snap: MarketSnapshot, positions_changed: bool) -> None:
+        p = snap.player
+        if self._prev_cash is None:
+            row = self.conn.execute(
+                "SELECT server_ms, cash FROM snapshots WHERE server_ms < ? AND cash IS NOT NULL "
+                "ORDER BY server_ms DESC LIMIT 1", (snap.server_time_ms,)).fetchone()
+            self._prev_cash = tuple(row) if row else None
+        prev, self._prev_cash = self._prev_cash, (snap.server_time_ms, p.cash)
+        if prev is None or positions_changed:
+            return
+        prices = {s.stock_id: (s.price, s.dividend_rate) for s in snap.stocks}
+        holdings = {pos.stock_id: pos.shares_owned for pos in p.positions if pos.shares_owned}
+        base = sum(n * prices[sid][0] * prices[sid][1] for sid, n in holdings.items() if sid in prices)
+        self._record_dividend(prev, snap.server_time_ms, p.cash, base)
+
+    def _record_dividend(self, prev: tuple[int, float], server_ms: int, cash: float, base: float) -> bool:
+        delta, gap = cash - prev[1], server_ms - prev[0]
+        if delta <= 0 or not 0 < gap < 5000 or base <= 0 or server_ms % 60000 > self.DIVIDEND_WINDOW_MS:
+            return False
+        factor = delta / base
+        lo, hi = self.DIVIDEND_FACTOR_RANGE
+        if not lo < factor < hi:
+            return False
+        self.conn.execute("INSERT OR IGNORE INTO dividends (server_ms, amount, base, factor) VALUES (?,?,?,?)",
+                          (server_ms, delta, base, factor))
+        return True
+
+    def backfill_dividends(self) -> int:
+        """One-time scan of the recorded history for payouts (databases from before this feature)."""
+        if self.get_setting("dividends_backfilled") == "1":
+            return 0
+        rates = dict(self.conn.execute("SELECT stock_id, dividend_rate FROM stocks"))
+        hist: dict[str, tuple[list, list]] = {}
+        for ts, sid, owned in self.conn.execute(
+                "SELECT server_ms, stock_id, shares_owned FROM position_history ORDER BY server_ms"):
+            times, values = hist.setdefault(sid, ([], []))
+            times.append(ts)
+            values.append(owned or 0.0)
+        change_times = sorted(t for times, _ in hist.values() for t in times)
+
+        def owned_at(sid: str, ts: int) -> float:
+            times, values = hist[sid]
+            i = bisect.bisect_right(times, ts) - 1
+            return values[i] if i >= 0 else 0.0
+
+        found = 0
+        snaps = self.conn.execute(
+            "SELECT server_ms, cash FROM snapshots WHERE cash IS NOT NULL ORDER BY server_ms").fetchall()
+        for prev, (ts, cash) in zip(snaps, snaps[1:]):
+            if cash <= prev[1] or ts % 60000 > self.DIVIDEND_WINDOW_MS:
+                continue
+            i = bisect.bisect_right(change_times, prev[0])
+            if i < len(change_times) and change_times[i] <= ts:
+                continue  # a trade happened in between
+            base = 0.0
+            for sid in hist:
+                n = owned_at(sid, prev[0])
+                if n and rates.get(sid):
+                    price = self.price_at(sid, ts)
+                    base += n * (price or 0.0) * rates[sid]
+            found += self._record_dividend(prev, ts, cash, base)
+        self.conn.commit()
+        self.set_setting("dividends_backfilled", "1")
+        return found
+
+    def dividend_factor(self, last_n: int = 5) -> tuple[Optional[float], int]:
+        """Median multiplier of the most recent payouts and the total number of detected payouts."""
+        factors = [r[0] for r in self.conn.execute(
+            "SELECT factor FROM dividends ORDER BY server_ms DESC LIMIT ?", (last_n,))]
+        count = self.conn.execute("SELECT COUNT(*) FROM dividends").fetchone()[0]
+        return (statistics.median(factors) if factors else None), count
+
+    def dividends(self, since_ms: int = 0, until_ms: int = 2 ** 62, limit: int = 500) -> list[tuple]:
+        """(server_ms, amount, factor), newest first."""
+        return self.conn.execute(
+            "SELECT server_ms, amount, factor FROM dividends WHERE server_ms BETWEEN ? AND ? "
+            "ORDER BY server_ms DESC LIMIT ?", (since_ms, until_ms, limit)).fetchall()
+
+    def dividend_sum(self, since_ms: int, until_ms: int) -> float:
+        return self.conn.execute("SELECT COALESCE(SUM(amount), 0) FROM dividends WHERE server_ms BETWEEN ? AND ?",
+                                 (since_ms, until_ms)).fetchone()[0]
 
     def store_prices(self, samples: Iterable[PriceSample]) -> int:
         cur = self.conn.executemany(
@@ -454,17 +567,19 @@ class Storage:
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
     def add_rule(self, stock_id: str, kind: str, side: str, mode: str, value: float,
-                 percent: int, confirm_s: float, created_ms: int, repeat: bool = False) -> int:
+                 percent: int, confirm_s: float, created_ms: int, repeat: bool = False,
+                 status: str = "") -> int:
         cur = self.conn.execute(
-            """INSERT INTO rules (stock_id, kind, side, mode, value, percent, confirm_s, enabled, status, created_ms, repeat)
-               VALUES (?,?,?,?,?,?,?,1,'aktiv',?,?)""",
-            (stock_id, kind, side, mode, value, percent, confirm_s, created_ms, int(repeat)))
+            """INSERT INTO rules (stock_id, kind, side, mode, value, percent, confirm_s, enabled, status,
+                                   created_ms, repeat)
+               VALUES (?,?,?,?,?,?,?,1,?,?,?)""",
+            (stock_id, kind, side, mode, value, percent, confirm_s, status, created_ms, int(repeat)))
         self.conn.commit()
         return cur.lastrowid
 
     def update_rule(self, rule_id: int, **fields) -> None:
-        allowed = {"enabled", "extreme", "status", "triggered_ms",
-                   "stock_id", "kind", "side", "mode", "value", "percent", "confirm_s", "repeat"}
+        allowed = {"enabled", "extreme", "status", "triggered_ms", "repeat", "runs",
+                   "stock_id", "kind", "side", "mode", "value", "percent", "confirm_s"}
         assert set(fields) <= allowed, fields
         sets = ", ".join(f"{k}=?" for k in fields)
         self.conn.execute(f"UPDATE rules SET {sets} WHERE id=?", (*fields.values(), rule_id))

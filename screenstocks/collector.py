@@ -60,6 +60,12 @@ class Collector(threading.Thread):
     def run(self) -> None:
         storage = Storage(self.db_path)
         self._last_price_time = storage.latest_price_times()
+        try:
+            n = storage.backfill_dividends()
+            if n:
+                log.info("detected %d dividend payouts in the existing history", n)
+        except Exception:
+            log.exception("dividend backfill failed")
         with self.status.lock:
             self.status.running = True
         try:

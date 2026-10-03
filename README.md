@@ -16,10 +16,15 @@ automated rules such as stop-loss and take-profit.
 - **Trade** – buy, sell, short, cover or close the selected stock by percentage (1–100%, whole numbers,
   as the game rounds them). Shows the result the game reports (done / rejected + reason).
 - **Automation** – stop-loss, take-profit (fixed price or % from entry), trailing stop, limit buy,
-  limit short. Optional "confirm after N seconds" against short spikes. Each rule fires once and
-  disables itself; cooldown / rate-limit rejections are retried automatically.
+  limit short. Optional "confirm after N seconds" against short spikes. By default a rule fires once and
+  disables itself; with **↻ Repeat** it stays active and fires again each time the price leaves the
+  trigger zone and reaches it again. Cooldown / rate-limit rejections are retried automatically.
 - **Compare** – all stocks normalised to % change on one chart.
 - **Portfolio** – net worth and cash over time, open positions, position changes.
+- **Dividends** – the export only contains the dividend rate, so payouts are detected from cash increases
+  at the full minute (also back-filled from existing history). The app learns your dividend multiplier
+  (upgrades/level) from the last payouts and shows the expected dividend per minute per stock, the total
+  per minute/hour, dividends received in the selected range and a payout list.
 - **News** – market high/low alerts and scheduled events with countdown.
 - German and English UI, setup wizard on first start.
 

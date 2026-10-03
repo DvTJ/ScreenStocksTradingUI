@@ -2,8 +2,9 @@
 
 Runs in its own thread, evaluates all enabled rules against the newest
 market.json prices and fires trade commands through the mod's command files.
-A rule is one-shot (disables itself after a successful execution) unless
-`repeat` is set; then it re-arms once its condition has cleared.
+A rule is one-shot by default: after a successful execution it disables itself.
+With "repeat" it stays enabled and re-arms once the price has left the trigger
+zone again, so a limit buy below its limit does not fire on every tick.
 """
 
 import logging
@@ -122,8 +123,9 @@ class AutomationEngine(threading.Thread):
         self._since: dict[int, float] = {}          # rule id -> local time condition became true
         self._pending: dict[int, tuple] = {}        # rule id -> (SentCommand, known ids, local send time)
         self._retry_at: dict[int, float] = {}
-        self._rearm: set[int] = set()               # repeating rules that fired; wait for the condition to clear
         self._status: dict[int, str] = {}
+        self._rearm: set[int] = set()               # repeat rules waiting for the price to leave the trigger zone
+        self._seen: set[int] = set()
         self.state = "starting"                     # starting / active / paused / not_live
 
     def stop(self) -> None:
@@ -174,6 +176,7 @@ class AutomationEngine(threading.Thread):
                         self.writer.cancel(d[rid][0])
                     d.pop(rid)
         self._rearm &= active_ids
+        self._seen &= active_ids
         if not rules:
             return
 
@@ -202,6 +205,11 @@ class AutomationEngine(threading.Thread):
             if rid in self._pending:
                 self._check_pending(db, rule)
                 continue
+            if rid not in self._seen:
+                self._seen.add(rid)
+                if rule["repeat"] and rule["runs"]:
+                    # after a restart, an already executed repeat rule waits for a fresh crossing
+                    self._rearm.add(rid)
             if not enabled or not live or price is None:
                 self._since.pop(rid, None)
                 continue
@@ -213,12 +221,16 @@ class AutomationEngine(threading.Thread):
             if trig is None:
                 self._set_status(db, rule, t("rule.st.wait_reference"))
                 continue
-            if not condition_met(rule, price, trig):
-                self._since.pop(rid, None)
-                self._rearm.discard(rid)
-                self._set_status(db, rule, t("rule.st.active"))
-                continue
+            met = condition_met(rule, price, trig)
             if rid in self._rearm:
+                if met:
+                    self._set_status(db, rule, t("rule.st.rearm", n=rule["runs"]))
+                    continue
+                self._rearm.discard(rid)
+                self._log(db, rule, t("rule.log.rearmed"))
+            if not met:
+                self._since.pop(rid, None)
+                self._set_status(db, rule, t("rule.st.active"))
                 continue
 
             since = self._since.setdefault(rid, now)
@@ -261,19 +273,33 @@ class AutomationEngine(threading.Thread):
             status, reason = res["status"], res["reason"] or ""
             if status == "done":
                 self._pending.pop(rule["id"])
-                self._since.pop(rule["id"], None)
+                runs = (rule["runs"] or 0) + 1
+                rule["runs"] = runs
+                self._log(db, rule, t("rule.log.done", action=action_name(sent.action), p=sent.percent)
+                          + (f" ({runs}×)" if rule["repeat"] else ""))
                 if rule["repeat"]:
+                    db.update_rule(rule["id"], runs=runs, extreme=None)
+                    rule["extreme"] = None
+                    self._since.pop(rule["id"], None)
                     self._rearm.add(rule["id"])
+                    self._set_status(db, rule, t("rule.st.rearm", n=runs))
                 else:
-                    db.update_rule(rule["id"], enabled=0)
-                self._set_status(db, rule, t("rule.st.done"))
-                self._log(db, rule, t("rule.log.done", action=action_name(sent.action), p=sent.percent))
+                    db.update_rule(rule["id"], enabled=0, runs=runs)
+                    self._set_status(db, rule, t("rule.st.done"))
             elif status in ("rejected", "failed"):
                 self._pending.pop(rule["id"])
                 if reason in RETRY_REASONS:
                     self._retry_at[rule["id"]] = time.time() + RETRY_BACKOFF_S
                     self._set_status(db, rule, t("rule.st.waiting_reason", reason=reason_text(reason)))
                     self._log(db, rule, t("rule.log.retry", status=status_text(status), reason=reason_text(reason)))
+                elif rule["repeat"]:
+                    # keep a repeating rule alive; it fires again on the next crossing
+                    self._since.pop(rule["id"], None)
+                    self._rearm.add(rule["id"])
+                    self._set_status(db, rule, t("rule.st.rejected_rearm", status=status_text(status),
+                                                 reason=reason_text(reason)))
+                    self._log(db, rule, t("rule.log.rejected_rearm", status=status_text(status),
+                                          reason=reason_text(reason)))
                 else:
                     db.update_rule(rule["id"], enabled=0)
                     self._set_status(db, rule, t("rule.st.final", status=status_text(status),

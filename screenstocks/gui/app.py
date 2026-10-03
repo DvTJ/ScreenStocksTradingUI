@@ -50,6 +50,17 @@ class Ctx:
     positions: dict = field(default_factory=dict)
     colors: dict = field(default_factory=dict)
     last_prices: dict = field(default_factory=dict)
+    div_factor: Optional[float] = None   # detected dividend multiplier (None until the first payout)
+    div_count: int = 0
+
+    def dividend_per_min(self, sid: str) -> Optional[float]:
+        """Expected payout per minute for the long position in sid."""
+        owned = (self.positions.get(sid) or {}).get("shares_owned") or 0.0
+        st = next((s for s in self.stocks if s["stock_id"] == sid), None)
+        last = self.last_prices.get(sid)
+        if not owned or not st or not last or not st.get("dividend_rate"):
+            return None
+        return owned * last[1] * st["dividend_rate"] * (self.div_factor or 1.0)
 
     def window(self, seconds: Optional[int]) -> Optional[tuple[int, int]]:
         if self.end_ms is None:
@@ -431,6 +442,7 @@ class MarketTab(ttk.Frame):
         ("avg", "common.avg_buy", 80, "e"),
         ("short", "common.short", 80, "e"),
         ("pl", "common.pl", 95, "e"),
+        ("div_min", "col.div_min", 90, "e"),
     ]
 
     def __init__(self, master, app: "App"):
@@ -502,6 +514,7 @@ class MarketTab(ttk.Frame):
             if price is not None and (owned or shorted):
                 pl = (price - avg) * owned + (avg_short - price) * shorted
 
+            div = ctx.dividend_per_min(sid)
             d5 = deltas["d5"]
             tags = ("locked",) if not st.get("unlocked", 1) else \
                 ("up",) if d5 and d5 > 0 else ("down",) if d5 and d5 < 0 else ()
@@ -513,11 +526,13 @@ class MarketTab(ttk.Frame):
                 fmt.big(st.get("available_shares")), fmt.num(st.get("max_volume"), 0),
                 fmt.big(owned) if owned else "", fmt.price(avg) if owned else "",
                 fmt.big(shorted) if shorted else "", fmt.big(pl) if pl is not None else "",
+                fmt.big(div) if div else "",
             )
             sort_values = dict(ticker=sid, name=st.get("name"), price=price, **deltas,
                                base=st.get("base_price"), cap=st.get("price_cap"), div=st.get("dividend_rate"),
                                avail=st.get("available_shares"), maxvol=st.get("max_volume"),
-                               owned=owned or None, avg=avg or None, short=shorted or None, pl=pl)
+                               owned=owned or None, avg=avg or None, short=shorted or None, pl=pl,
+                               div_min=div)
             rows.append((sid, values, sort_values, tags))
         self.tree.set_rows(rows)
 
@@ -680,6 +695,12 @@ class PortfolioTab(ttk.Frame):
         ("short", "common.short", 95, "e"),
         ("avg_short", "common.avg_short", 85, "e"),
         ("short_pl", "pf.short_pl", 100, "e"),
+        ("div_min", "col.div_min", 90, "e"),
+    ]
+    DIV_COLUMNS = [
+        ("time", "common.time", 140, "w"),
+        ("amount", "pf.div_amount", 120, "e"),
+        ("factor", "pf.div_factor_col", 80, "e"),
     ]
     CHANGE_COLUMNS = [
         ("time", "common.time", 120, "w"),
@@ -697,12 +718,16 @@ class PortfolioTab(ttk.Frame):
         kpis.pack(fill="x", pady=(8, 4))
         self.kpi: dict[str, ttk.Label] = {}
         for key, title in (("net", t("common.net_worth")), ("cash", t("common.cash")), ("invested", t("pf.invested")),
-                           ("delta", t("pf.delta")), ("pl", t("pf.open_pl"))):
+                           ("delta", t("pf.delta")), ("pl", t("pf.open_pl")), ("div_min", t("pf.div_min")),
+                           ("div_sum", t("pf.div_received"))):
             box = ttk.Frame(kpis, style="Card.TFrame", padding=(12, 6))
-            box.pack(side="left", padx=4)
+            box.pack(side="left", padx=4, fill="y")
             ttk.Label(box, text=title, style="CardMuted.TLabel").pack(anchor="w")
             self.kpi[key] = ttk.Label(box, text="–", style="Kpi.TLabel")
             self.kpi[key].pack(anchor="w")
+            if key == "div_min":
+                self.div_caption = ttk.Label(box, text="", style="CardMuted.TLabel")
+                self.div_caption.pack(anchor="w")
 
         bar = ttk.Frame(self, style="Panel.TFrame")
         bar.pack(fill="x", pady=4)
@@ -717,17 +742,26 @@ class PortfolioTab(ttk.Frame):
         lower = ttk.Frame(paned, style="Panel.TFrame")
         lpan = ttk.PanedWindow(lower, orient="horizontal")
         lpan.pack(fill="both", expand=True)
-        left = ttk.Frame(lpan, style="Panel.TFrame")
-        ttk.Label(left, text=t("pf.positions"), style="Section.TLabel").pack(anchor="w", pady=(4, 2))
-        f, self.pos_tree = scrolled(left, lambda m: SortableTree(m, self.POS_COLUMNS, height=6))
+        # left: open positions above the dividend payouts; right: position changes
+        left = ttk.PanedWindow(lpan, orient="vertical")
+        posf = ttk.Frame(left, style="Panel.TFrame")
+        ttk.Label(posf, text=t("pf.positions"), style="Section.TLabel").pack(anchor="w", pady=(4, 2))
+        f, self.pos_tree = scrolled(posf, lambda m: SortableTree(m, self.POS_COLUMNS, height=4))
         f.pack(fill="both", expand=True)
+        left.add(posf, weight=1)
         right = ttk.Frame(lpan, style="Panel.TFrame")
         ttk.Label(right, text=t("pf.changes"), style="Section.TLabel").pack(anchor="w", pady=(4, 2))
         f, self.chg_tree = scrolled(right, lambda m: SortableTree(m, self.CHANGE_COLUMNS, height=6))
         f.pack(fill="both", expand=True)
-        for tree in (self.pos_tree, self.chg_tree):
+        divf = ttk.Frame(left, style="Panel.TFrame")
+        ttk.Label(divf, text=t("pf.dividends"), style="Section.TLabel").pack(anchor="w", pady=(4, 2))
+        f, self.div_tree = scrolled(divf, lambda m: SortableTree(m, self.DIV_COLUMNS, height=6))
+        f.pack(fill="both", expand=True)
+        self.div_tree.sort_col, self.div_tree.sort_desc = "time", True
+        for tree in (self.pos_tree, self.chg_tree, self.div_tree):
             tree.tag_configure("up", foreground=THEME["up"])
             tree.tag_configure("down", foreground=THEME["down"])
+        left.add(divf, weight=1)
         lpan.add(left, weight=3)
         lpan.add(right, weight=2)
         paned.add(lower, weight=2)
@@ -758,6 +792,9 @@ class PortfolioTab(ttk.Frame):
             series = [Series(t("common.net_worth"), THEME["accent"], [(ts, n, n, n) for ts, n, _c in rows]),
                       Series(t("common.cash"), THEME["up"], [(ts, c, c, c) for ts, _n, c in rows])]
             self.chart.set_data(series, x_range=win, empty_text=t("pf.no_data"))
+            received = db.dividend_sum(*win)
+            self.kpi["div_sum"].configure(text=fmt.big(received) if received else "–",
+                                          style="KpiUp.TLabel" if received else "Kpi.TLabel")
             start_net = db.snapshot_value_at("net_worth", win[0]) or (rows[0][1] if rows else None)
             delta = net - start_net if net is not None and start_net is not None else None
             self.kpi["delta"].configure(
@@ -766,7 +803,7 @@ class PortfolioTab(ttk.Frame):
         else:
             self.chart.set_data([], empty_text=t("pf.no_data"))
 
-        rows, total_pl = [], 0.0
+        rows, total_pl, div_total = [], 0.0, 0.0
         for sid, pos in sorted(ctx.positions.items()):
             last = ctx.last_prices.get(sid)
             price = last[1] if last else None
@@ -778,13 +815,15 @@ class PortfolioTab(ttk.Frame):
             spl = (avg_s - price) * shorted if price is not None and shorted else None
             total_pl += (pl or 0) + (spl or 0)
             tot = (pl or 0) + (spl or 0)
+            div = ctx.dividend_per_min(sid)
+            div_total += div or 0.0
             rows.append((sid, (
                 sid, fmt.big(owned) if owned else "", fmt.price(avg) if owned else "", fmt.price(price),
                 fmt.big(value) if owned else "", fmt.big(pl) if pl is not None else "", fmt.pct(plp) if owned else "",
                 fmt.big(shorted) if shorted else "", fmt.price(avg_s) if shorted else "",
-                fmt.big(spl) if spl is not None else "",
+                fmt.big(spl) if spl is not None else "", fmt.big(div) if div else "",
             ), dict(stock=sid, owned=owned, avg=avg, price=price, value=value, pl=pl, plp=plp,
-                    short=shorted, avg_short=avg_s, short_pl=spl),
+                    short=shorted, avg_short=avg_s, short_pl=spl, div_min=div),
                 ("up",) if tot > 0 else ("down",) if tot < 0 else ()))
         self.pos_tree.set_rows(rows)
         self.kpi["pl"].configure(text=fmt.big(total_pl) if ctx.positions else "–",
@@ -796,6 +835,18 @@ class PortfolioTab(ttk.Frame):
                                        fmt.big(shorted), fmt.price(avg_s)),
                         dict(time=ts, stock=sid, owned=owned, avg=avg, short=shorted, avg_short=avg_s), ()))
         self.chg_tree.set_rows(chg)
+
+        self.kpi["div_min"].configure(text=fmt.big(div_total) if div_total else "–",
+                                      style="KpiUp.TLabel" if div_total else "Kpi.TLabel")
+        factor = (t("pf.div_factor", f=fmt.num(ctx.div_factor, 2), n=ctx.div_count) if ctx.div_factor
+                  else t("pf.div_factor_unknown"))
+        self.div_caption.configure(text=(t("pf.div_hour", v=fmt.big(div_total * 60)) + "  ·  " if div_total else "")
+                                   + factor)
+        self.div_tree.set_rows([
+            (str(ts), (fmt.clock(ts, with_date=True), fmt.big(amount), f"×{fmt.num(factor_, 2)}"),
+             dict(time=ts, amount=amount, factor=factor_), ("up",))
+            for ts, amount, factor_ in db.dividends(limit=300)
+        ])
 
 
 class NewsTab(ttk.Frame):
@@ -871,7 +922,7 @@ class AutomationTab(ttk.Frame):
         ("price", "common.price", 85, "e"),
         ("dist", "auto.col_distance", 80, "e"),
         ("confirm", "auto.col_confirm", 60, "e"),
-        ("repeat", "auto.col_repeat", 50, "center"),
+        ("repeat", "auto.col_repeat", 65, "center"),
         ("active", "auto.col_active", 50, "center"),
         ("status", "common.status", 260, "w"),
     ]
@@ -935,9 +986,10 @@ class AutomationTab(ttk.Frame):
                                                    justify="right", bg=THEME["panel"], fg=THEME["fg"],
                                                    buttonbackground=THEME["panel_alt"], insertbackground=THEME["fg"],
                                                    relief="flat"))
-        tk.Checkbutton(form, text=t("auto.repeat"), variable=self.repeat_var, bg=THEME["panel_alt"], fg=THEME["fg"],
-                       selectcolor=THEME["panel"], activebackground=THEME["panel_alt"], activeforeground=THEME["fg"],
-                       highlightthickness=0, bd=0).grid(row=1, column=6, padx=(0, 10))
+        tk.Checkbutton(form, text="↻ " + t("auto.repeat"), variable=self.repeat_var,
+                       bg=THEME["panel_alt"], fg=THEME["fg"], selectcolor=THEME["panel"],
+                       activebackground=THEME["panel_alt"], activeforeground=THEME["fg"],
+                       font=THEME["font_bold"], highlightthickness=0, bd=0).grid(row=1, column=6, padx=(0, 12))
         ttk.Button(form, text=t("auto.use_price"), command=self._use_price).grid(row=1, column=7, padx=(0, 6))
         self.add_btn = tk.Button(form, text=t("auto.add"), command=self._add_rule, bg=THEME["accent"], fg="#0d1117",
                                  activebackground=blend(THEME["accent"], "#ffffff", 0.8), font=THEME["font_bold"],
@@ -948,7 +1000,8 @@ class AutomationTab(ttk.Frame):
         self.cancel_btn.grid_remove()
         self.help = ttk.Label(form, text="", style="CardMuted.TLabel", wraplength=1100, justify="left")
         self.help.grid(row=2, column=0, columnspan=10, sticky="w", pady=(6, 0))
-        for var in (self.kind_var, self.side_var, self.mode_var, self.pct_var, self.value_var, self.stock_var):
+        for var in (self.kind_var, self.side_var, self.mode_var, self.pct_var, self.value_var, self.stock_var,
+                    self.repeat_var):
             var.trace_add("write", lambda *_: self._update_form())
 
         # ---- rules + log
@@ -961,6 +1014,7 @@ class AutomationTab(ttk.Frame):
         ttk.Button(bar, text=t("auto.delete"), command=self._delete).pack(side="right", padx=2)
         ttk.Button(bar, text=t("auto.toggle"), command=self._toggle_rule).pack(side="right", padx=2)
         ttk.Button(bar, text=t("auto.edit"), command=self._edit_rule).pack(side="right", padx=2)
+        ttk.Button(bar, text="↻ " + t("auto.toggle_repeat"), command=self._toggle_repeat).pack(side="right", padx=2)
         f, self.rules_tree = scrolled(rules_frame, lambda m: SortableTree(m, self.RULE_COLUMNS, height=8))
         f.pack(fill="both", expand=True)
         self.rules_tree.tag_configure("off", foreground=THEME["muted"])
@@ -995,7 +1049,7 @@ class AutomationTab(ttk.Frame):
             "pct" if kind == "trailing_stop" else self._key(MODE_KEYS, mode_name, self.mode_var.get())
         return dict(id=0, stock_id=self.stock_var.get(), kind=kind, side=self._key(SIDE_KEYS, side_name, self.side_var.get()),
                     mode=mode, value=value, percent=pct, confirm_s=confirm, extreme=None,
-                    repeat=int(self.repeat_var.get()))
+                    repeat=int(self.repeat_var.get()), runs=0)
 
     def _edit_rule(self) -> None:
         rid = self._selected_rule_id()
@@ -1052,6 +1106,7 @@ class AutomationTab(ttk.Frame):
                 text += "   ·   " + t("auto.current_price", price=fmt.price(last[1]))
             if needs_position(rule) and not has_position(rule, pos):
                 text += "   ·   " + t("auto.no_position", side=side_name(side), stock=rule["stock_id"])
+        text += "\n" + (t("auto.repeat_on_help") if self.repeat_var.get() else t("auto.repeat_off_help"))
         self.help.configure(text=text)
 
     def _use_price(self) -> None:
@@ -1085,16 +1140,18 @@ class AutomationTab(ttk.Frame):
             ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                             t("rule.log.edited", kind=kind_name(rule["kind"]),
                               trigger=describe_trigger(rule, None, fmt.price, fmt.decimal_sep()), p=rule["percent"],
-                              rep=" ∞" if rule["repeat"] else ""))
+                              rep=" ↻" if rule["repeat"] else ""))
             self._cancel_edit()
             self.app.refresh_now()
             return
         rid = ctx.db.add_rule(rule["stock_id"], rule["kind"], rule["side"], rule["mode"], rule["value"],
-                              rule["percent"], rule["confirm_s"], int(time.time() * 1000), bool(rule["repeat"]))
+                              rule["percent"], rule["confirm_s"], int(time.time() * 1000),
+                              repeat=bool(rule["repeat"]), status=t("rule.st.active"))
         ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                         t("rule.log.created", kind=kind_name(rule["kind"]),
                           side=side_name(rule["side"]) if rule["kind"] in EXIT_KINDS else "",
-                          trigger=describe_trigger(rule, None, fmt.price, fmt.decimal_sep()), p=rule["percent"]))
+                          trigger=describe_trigger(rule, None, fmt.price, fmt.decimal_sep()), p=rule["percent"])
+                        + (" ↻" if rule["repeat"] else ""))
         self.app.refresh_now()
 
     # ------------------------------------------------------------------ rules
@@ -1121,6 +1178,18 @@ class AutomationTab(ttk.Frame):
                                      **({"extreme": None} if on else {}))
             self._ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                                   t("rule.log.enabled") if on else t("rule.log.disabled_manual"))
+            self.app.refresh_now()
+
+    def _toggle_repeat(self) -> None:
+        rid = self._selected_rule_id()
+        if rid is None or not self._ctx:
+            return
+        rule = next((r for r in self._ctx.db.rules() if r["id"] == rid), None)
+        if rule:
+            on = not rule["repeat"]
+            self._ctx.db.update_rule(rid, repeat=int(on))
+            self._ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
+                                  t("rule.log.repeat_on") if on else t("rule.log.repeat_off"))
             self.app.refresh_now()
 
     def _delete(self) -> None:
@@ -1160,10 +1229,12 @@ class AutomationTab(ttk.Frame):
                 r["id"], r["stock_id"], kind_name(r["kind"]),
                 side_name(r["side"]) if r["kind"] in EXIT_KINDS else "",
                 describe_trigger(r, trig, fmt.price, fmt.decimal_sep()), fmt.pct_int(r["percent"]), fmt.price(price), fmt.pct(dist),
-                f"{r['confirm_s']:g} s" if r["confirm_s"] else "–", "∞" if r["repeat"] else "–",
+                f"{r['confirm_s']:g} s" if r["confirm_s"] else "–",
+                t("auto.repeat_cell", n=r["runs"]) if r["repeat"] else t("auto.once_cell", n=r["runs"]),
                 "✔" if r["enabled"] else "–", r["status"] or ""),
                 dict(id=r["id"], stock=r["stock_id"], kind=r["kind"], side=r["side"], trigger=trig, pct=r["percent"],
-                     price=price, dist=dist, confirm=r["confirm_s"], repeat=r["repeat"], active=r["enabled"], status=r["status"]),
+                     price=price, dist=dist, confirm=r["confirm_s"], repeat=(r["repeat"], r["runs"]), active=r["enabled"],
+                     status=r["status"]),
                 tags))
         self.rules_tree.set_rows(rows)
 
@@ -1238,9 +1309,11 @@ class App(tk.Tk):
         known = {s["stock_id"] for s in stocks}
         stocks += [{"stock_id": sid} for sid in db.stock_ids() if sid not in known]
         colors = {s["stock_id"]: STOCK_COLORS[i % len(STOCK_COLORS)] for i, s in enumerate(stocks)}
+        div_factor, div_count = db.dividend_factor()
         return Ctx(db=db, status=status, snap=snap, end_ms=db.latest_time_ms(), server_now_ms=server_now,
                    live=live, stocks=stocks, positions=db.current_positions(), colors=colors,
-                   last_prices={s["stock_id"]: db.latest_price(s["stock_id"]) for s in stocks})
+                   last_prices={s["stock_id"]: db.latest_price(s["stock_id"]) for s in stocks},
+                   div_factor=div_factor, div_count=div_count)
 
     def _tick(self) -> None:
         try:

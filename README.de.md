@@ -16,10 +16,16 @@ führt automatische Regeln wie Stop-Loss und Take-Profit aus.
 - **Handeln** – Kaufen, Verkaufen, Shorten, Covern oder Schließen der gewählten Aktie in Prozent
   (1–100 %, ganze Zahlen, da das Spiel rundet). Zeigt die Rückmeldung des Spiels (ausgeführt / abgelehnt + Grund).
 - **Automatik** – Stop-Loss, Take-Profit (fester Preis oder % vom Einstieg), Trailing-Stop, Limit-Kauf,
-  Limit-Short. Optional „Bestätigen nach N Sekunden“ gegen kurze Ausreißer. Jede Regel löst einmal aus und
-  deaktiviert sich; bei Cooldown/Rate-Limit wird automatisch erneut versucht.
+  Limit-Short. Optional „Bestätigen nach N Sekunden“ gegen kurze Ausreißer. Standardmäßig löst eine Regel
+  einmal aus und deaktiviert sich; mit **↻ Wiederholen** bleibt sie aktiv und löst jedes Mal erneut aus,
+  wenn der Kurs den Auslösebereich verlassen und wieder erreicht hat. Bei Cooldown/Rate-Limit wird automatisch
+  erneut versucht.
 - **Vergleich** – alle Aktien normiert in % in einem Chart.
 - **Portfolio** – Nettovermögen und Bargeld im Verlauf, offene Positionen, Positionsänderungen.
+- **Dividenden** – der Export enthält nur den Dividendensatz; Auszahlungen werden daher an Bargeld-Anstiegen
+  zur vollen Minute erkannt (auch rückwirkend aus der vorhandenen Historie). Die App ermittelt deinen
+  Dividenden-Faktor (Upgrades/Level) aus den letzten Auszahlungen und zeigt die erwartete Dividende pro Minute
+  je Aktie, die Summe pro Minute/Stunde, erhaltene Dividenden im Zeitraum und eine Auszahlungsliste.
 - **News** – Hoch/Tief-Meldungen und geplante Ereignisse mit Countdown.
 - Oberfläche auf Deutsch und Englisch, Einrichtungsassistent beim ersten Start.
 
