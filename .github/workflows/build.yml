@@ -1,0 +1,83 @@
+name: Build
+
+# Push a tag like v1.0.0 to build the installer and publish a GitHub release.
+# "Run workflow" (manual) builds the same files and attaches them as workflow artifacts only.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = python -c "import screenstocks; print(screenstocks.__version__)"
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Version: $version"
+
+      - name: Set app version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          Set-Content -Path screenstocks/__init__.py -Encoding utf8 -Value @(
+            '"""ScreenStocks market data reader, history recorder and trading helper."""',
+            '',
+            "__version__ = `"$env:VERSION`""
+          )
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Build app (PyInstaller)
+        run: pyinstaller --noconfirm ScreenStocksTradingBot.spec
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\ScreenStocksTradingBot\ScreenStocksTradingBot.exe" -ArgumentList "--version" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "exe exited with $($p.ExitCode)" }
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$env:VERSION" installer\ScreenStocksTradingBot.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+
+      - name: Portable zip
+        shell: pwsh
+        run: Compress-Archive -Path dist\ScreenStocksTradingBot\* -DestinationPath "dist\ScreenStocksTradingBot-$env:VERSION-portable.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenStocksTradingBot-${{ env.VERSION }}
+          path: |
+            dist/installer/*.exe
+            dist/*-portable.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/installer/*.exe
+            dist/*-portable.zip
+          generate_release_notes: true

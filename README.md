@@ -1,0 +1,100 @@
+# ScreenStocks Trading Bot
+
+[Deutsch](README.de.md)
+
+A desktop companion for the game **Screen Stocks**. It reads the game's mod export files,
+records a permanent price and portfolio history, lets you trade by exact percentages and runs
+automated rules such as stop-loss and take-profit.
+
+*Unofficial fan project – not affiliated with the developers of Screen Stocks.*
+
+## Features
+
+- **Market** – all stocks with price, change (1m/5m/15m/1h), dividend, availability, your position and P/L;
+  price chart per stock with market-news markers, your trades (B buy · S sell · H short · C cover),
+  average entry price, scheduled events and active automation rules. CSV export.
+- **Trade** – buy, sell, short, cover or close the selected stock by percentage (1–100%, whole numbers,
+  as the game rounds them). Shows the result the game reports (done / rejected + reason).
+- **Automation** – stop-loss, take-profit (fixed price or % from entry), trailing stop, limit buy,
+  limit short. Optional "confirm after N seconds" against short spikes. Each rule fires once and
+  disables itself; cooldown / rate-limit rejections are retried automatically.
+- **Compare** – all stocks normalised to % change on one chart.
+- **Portfolio** – net worth and cash over time, open positions, position changes.
+- **News** – market high/low alerts and scheduled events with countdown.
+- German and English UI, setup wizard on first start.
+
+## Installation
+
+Download the latest `ScreenStocksTradingBot-Setup-x.y.z.exe` from
+[Releases](../../releases) and run it. No admin rights are needed (per-user install).
+A portable ZIP is attached to every release as well.
+
+On first start a short setup wizard asks for:
+
+1. **Language** – Deutsch / English
+2. **Game folder** – the mod's `export` folder, usually
+   `%USERPROFILE%\AppData\LocalLow\Conradical Games\Screen Stocks\mods\export`
+   (detected automatically). The wizard can switch on `export` and `commands`
+   in the game's `mod-settings.json`.
+3. **Database** – where the history is stored (default `%LOCALAPPDATA%\ScreenStocksTradingBot\screenstocks.db`)
+
+You can reopen the wizard at any time via **⚙ Settings** (or the start-menu entry
+"ScreenStocks Trading Bot – Setup"). Settings live in `%APPDATA%\ScreenStocksTradingBot\settings.json`;
+uninstalling keeps your settings and history.
+
+> **Note:** trading commands and automation rules act in the game through the mod's command files.
+> Rules only fire while the app is running and the game is live. Fills are not guaranteed at the
+> trigger price.
+
+## Running from source
+
+Requires Python 3.10+ (Windows, tkinter included). No third-party packages.
+
+```
+python main.py              # dashboard + recording
+python main.py --setup      # run the setup wizard again
+python main.py --headless   # record + automation without a window
+python main.py --lang en    # override the UI language for one run
+```
+
+## Building
+
+```
+pip install pyinstaller
+pyinstaller --noconfirm ScreenStocksTradingBot.spec            # -> dist/ScreenStocksTradingBot/
+iscc /DMyAppVersion=1.0.0 installer\ScreenStocksTradingBot.iss  # -> dist/installer/ (needs Inno Setup 6)
+```
+
+### Releases via GitHub Actions
+
+`.github/workflows/build.yml` builds the app, the installer and a portable ZIP on `windows-latest`.
+
+- Push a tag `vX.Y.Z` → a GitHub release with the installer and ZIP is created automatically
+  (the version is taken from the tag).
+- "Run workflow" in the Actions tab → same build, files attached as workflow artifacts.
+
+```
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+## How it works
+
+The game's mod writes `market.json` (prices, player, positions, news, command results) about once per
+second and `history.json` (last 900 one-second samples per stock). The app watches both files, stores
+everything in SQLite and sends trades by writing `{"execute": true, "percent": N}` to
+`mods/commands/<stock>/<action>percent.json`.
+
+```
+main.py                     entry point / CLI
+screenstocks/reader.py      robust JSON reading + parsing
+screenstocks/storage.py     SQLite schema and queries
+screenstocks/collector.py   background thread watching the export files
+screenstocks/commands.py    trade commands via the mod's command files
+screenstocks/automation.py  rule engine (stop-loss, take-profit, trailing stop, limits)
+screenstocks/settings.py    user settings and paths
+screenstocks/i18n.py        German / English texts
+screenstocks/gui/           tkinter dashboard, chart, setup wizard, theme
+installer/                  Inno Setup script
+tools/make_icon.py          generates assets/icon.ico
+```
