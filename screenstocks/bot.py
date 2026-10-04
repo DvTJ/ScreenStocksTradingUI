@@ -543,9 +543,11 @@ def save_results(db: Storage, res: dict) -> None:
 
 
 def delete_trade(db: Storage, ts: int) -> None:
-    """Remove one trade (by its timestamp) from the current results sheet."""
+    """Hide one trade (by its timestamp) from the lists; it keeps counting for the loss limit and the practice wallet."""
     res = load_results(db)
-    res["trades"] = [x for x in res["trades"] if x["ts"] != ts]
+    for x in res["trades"]:
+        if x["ts"] == ts:
+            x["hidden"] = True
     save_results(db, res)
 
 
@@ -591,7 +593,7 @@ def loss_limit_reached(res: dict, limit_pct: float) -> bool:
 def trade_history(res: dict) -> dict:
     """The trades of the current activation, newest first, with money made and per-stock totals (for the details view)."""
     rows, per = [], {}
-    for x in sorted(res["trades"], key=lambda x: x["ts"], reverse=True):
+    for x in sorted(shown(res["trades"]), key=lambda x: x["ts"], reverse=True):
         money = x.get("money", 0)
         row = {"time_ms": x["ts"], "stock_id": x["sid"], "side": x["side"], "ret": x["ret"], "money": money,
                "pnl": x["ret"] * money / 100, "entry": x.get("entry"), "exit": x.get("exit"), "reason": x["reason"],
@@ -621,8 +623,13 @@ def export_trades_csv(res: dict, path) -> None:
                         r["exit"], r["held_s"], t(reason)])
 
 
+def shown(trades: list) -> list:
+    return [x for x in trades if not x.get("hidden")]
+
+
 def summarize(trades: list) -> dict:
-    """gain = money made (estimated from the stake of each trade)."""
+    """gain = money made (estimated from the stake of each trade). Deleted (hidden) trades are left out."""
+    trades = shown(trades)
     rets = [x["ret"] for x in trades]
     return {"n": len(trades), "gain": sum(x["ret"] * x.get("money", 0) / 100 for x in trades),
             "win_rate": 100 * sum(r > 0 for r in rets) / len(rets) if rets else 0.0,
@@ -960,6 +967,8 @@ class BotTrader:
             buy_free, short_free = now_s >= self._paper_next["buy"], now_s >= self._paper_next["short"]
 
         event_soon = self.event_guard(db, server_ms)
+        armed = {"buy" if r["kind"] == "buy_limit" else "short" for r in db.rules(True)
+                 if r["kind"] in ("buy_limit", "short_limit")}     # the game's cooldown is shared with the user's rules
         cd_left = {"buy": ((snap.get("next_buy_ms") or 0) - server_ms) / 1000, "short": ((snap.get("next_short_ms") or 0) - server_ms) / 1000}
         if s.paper:
             cd_left = {k: self._paper_next[k] - now_s for k in cd_left}
@@ -972,6 +981,8 @@ class BotTrader:
                 code, args = "loss_limit", {}
             elif event_soon:
                 code, args = "event_soon", self._event_args(event_soon)
+            elif armed:
+                code, args = "rule_armed", {"kind": "/".join(sorted(armed))}
             else:
                 code, args = st.why_not(sid, now_s, price, None, buy_free, short_free, cd_left, len(held))
             if code != "excluded":                   # you chose that one yourself: no need to say it
@@ -980,6 +991,8 @@ class BotTrader:
             if reason == "entry" and event_soon:             # keep the cooldowns free for the event trader
                 continue
             if action == "buy" and sid in no_stock:
+                continue
+            if reason == "entry" and action in armed:          # keep the cooldown free for the user's own limit rule
                 continue
             if reason == "entry" and self.loss_limit_hit:      # closing positions stays allowed
                 continue
@@ -1066,13 +1079,14 @@ class BotTrader:
         if reason == "entry" and pct < 1:
             return False                                   # over the risk budget
         known = {r["id"] for r in db.command_results(200)}
+        pos_ms = (db.conn.execute("SELECT MAX(server_ms) FROM position_history WHERE stock_id=?", (sid,)).fetchone() or [0])[0] or 0
         try:
             sent = self.writer.send(sid, action, pct)
         except Exception as exc:
             self._blocked[sid] = now_s + REJECT_BLOCK_S
             self._log(db, sid, t("rule.log.send_failed", error=exc))
             return False
-        self._pending = dict(sent=sent, known=known, t=time.time(), reason=reason, price=price, now_s=now_s,
+        self._pending = dict(sent=sent, known=known, pos_ms=pos_ms, t=time.time(), reason=reason, price=price, now_s=now_s,
                              pct=sent.percent, target=self.strategy.fair.get(sid),
                              money=trade_money(price, sent.percent, cash, stock["available_shares"], action == "buy"))
         return True
@@ -1105,7 +1119,7 @@ class BotTrader:
                 self._save_held(db, held)
             else:
                 h = held.get(sid)
-                real = self._real_exit_price(db, sid, h, price)
+                real = self._real_exit_price(db, sid, h, price, pd["pos_ms"])
                 if real != price:
                     record_fee(db, sid, "out", (price / real - 1) * 100)
                 self._closed(db, held.pop(sid, None), sid, pd["reason"], real, now_s)
@@ -1124,23 +1138,25 @@ class BotTrader:
         return real if real > 0 else estimate
 
     @staticmethod
-    def _real_exit_price(db: Storage, sid: str, h: Optional[dict], estimate: float) -> float:
-        """What the game really paid for a closed long: the cash jump when the position went to zero (minus any dividend
-        landing in the same second) over the shares sold. Our own big order moves the price, so this is often 1-2 %
+    def _real_exit_price(db: Storage, sid: str, h: Optional[dict], estimate: float, since_ms: int = 0) -> float:
+        """What the game really paid for a sold long: the cash jump when the share count dropped after the order (minus
+        any dividend landing in the same second) over the shares sold; partial closes included. Our own big order moves the price, so this is often 1-2 %
         under the signal price. ponytail: shorts keep the signal price (the game's cash accounting for them is unclear)."""
         if not h or h["side"] != "long" or not h.get("entry_price"):
             return estimate
-        row = db.conn.execute("SELECT MAX(server_ms) FROM position_history WHERE stock_id=? AND shares_owned=0", (sid,)).fetchone()
-        m = row[0] if row else None
-        if not m:
+        # the share-count drop caused by this order: first row after the order was sent that is below its predecessor
+        rows = db.conn.execute("SELECT server_ms, shares_owned FROM position_history WHERE stock_id=? AND server_ms>=? "
+                               "ORDER BY server_ms", (sid, since_ms)).fetchall()
+        drop = next(((b[0], a[1] - b[1]) for a, b in zip(rows, rows[1:]) if (b[1] or 0) < (a[1] or 0)), None)
+        if not drop:
             return estimate
+        m, shares = drop
         before = db.conn.execute("SELECT server_ms, cash FROM snapshots WHERE server_ms<? AND cash IS NOT NULL "
                                  "ORDER BY server_ms DESC LIMIT 1", (m,)).fetchone()
         after = db.conn.execute("SELECT cash FROM snapshots WHERE server_ms>=? AND cash IS NOT NULL "
                                 "ORDER BY server_ms LIMIT 1", (m,)).fetchone()
         if not before or not after:
             return estimate
-        shares = h["money"] / h["entry_price"]
         real = (after[0] - before[1] - db.dividend_sum(before[0], m)) / shares if shares > 0 else 0.0
         return real if 0.8 * estimate < real < 1.2 * estimate else estimate
 

@@ -252,6 +252,7 @@
     body.querySelector('[data-role="trades"]').onclick = async (e) => {
       const b = e.target.closest("[data-del]");
       if (!b) return;
+      if (!(await SS.confirm(t("bot.delete_trade"), t("bot.delete_trade_ask"), t("bot.delete_trade"), "danger"))) return;
       await SS.call("bot_delete_trade", +b.dataset.del);
       const n = await SS.call("bot_trades");
       if (n && n.trades) tbl.set(n.trades);
