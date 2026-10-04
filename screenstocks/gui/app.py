@@ -6,9 +6,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from typing import Callable, Optional
+from typing import Optional
 
-from .. import __version__, config
+import threading
+import webbrowser
+
+from .. import __version__, config, settings as settings_mod, updater
 from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, AutomationEngine, condition_met,
                           describe_trigger, has_position, kind_name, mode_name, needs_position, side_name,
                           trigger_price)
@@ -18,10 +21,10 @@ from ..i18n import t
 from ..storage import Storage
 from . import fmt
 from .chart import HLine, LineChart, Marker, Series, blend
+from .analysis import DividendTab, JournalTab, StatsTab
 from .theme import THEME, apply_style, set_window_icon
+from .widgets import RangeBar, SortableTree, scrolled
 
-STOCK_COLORS = ["#58a6ff", "#3fb950", "#f0883e", "#d2a8ff", "#ff7b72",
-                "#56d4dd", "#e3b341", "#a5d6ff", "#7ee787", "#ffa198"]
 
 # trade kind -> chart colour (letter and label come from i18n: tradekind.*)
 TRADE_COLORS = {"buy": "#3fb950", "sell": "#f85149", "short": "#a371f7", "cover": "#58a6ff"}
@@ -32,9 +35,6 @@ RULE_COLORS = {
     "buy_limit": "#56d4dd",
     "short_limit": "#d2a8ff",
 }
-
-RANGES = [("1m", 60), ("5m", 300), ("15m", 900), ("1h", 3600),
-          ("6h", 21600), ("24h", 86400), ("common.all", None)]
 
 
 @dataclass
@@ -74,85 +74,6 @@ class Ctx:
 def stock_label(st: dict) -> str:
     name = st.get("name")
     return st["stock_id"] if not name or name == st["stock_id"] else f"{st['stock_id']} ({name})"
-
-
-# --------------------------------------------------------------------- widgets
-
-class RangeBar(ttk.Frame):
-    def __init__(self, master, on_change: Callable[[], None], default: str = "15m"):
-        super().__init__(master, style="Panel.TFrame")
-        self.var = tk.StringVar(value=default)
-        ttk.Label(self, text=t("common.range"), style="Panel.TLabel").pack(side="left", padx=(0, 6))
-        for label, _ in RANGES:
-            ttk.Radiobutton(self, text=t(label), value=label, variable=self.var, command=on_change,
-                            style="Range.Toolbutton").pack(side="left", padx=1)
-
-    @property
-    def label(self) -> str:
-        return t(self.var.get())
-
-    @property
-    def seconds(self) -> Optional[int]:
-        return dict(RANGES)[self.var.get()]
-
-
-class SortableTree(ttk.Treeview):
-    """Treeview whose rows are re-sorted on every update by the clicked column.
-
-    Column titles are i18n keys; anything that is not a key ("Δ 1m", "%") is shown as is.
-    """
-
-    def __init__(self, master, columns: list[tuple], **kw):
-        super().__init__(master, columns=[c[0] for c in columns], show="headings", **kw)
-        self.sort_col: Optional[str] = None
-        self.sort_desc = False
-        self._sort_values: dict[str, dict] = {}
-        for key, title, width, anchor in columns:
-            self.heading(key, text=t(title), command=lambda k=key: self._toggle_sort(k))
-            self.column(key, width=width, anchor=anchor, stretch=anchor == "w")
-
-    def _toggle_sort(self, key: str) -> None:
-        if self.sort_col == key:
-            self.sort_desc = not self.sort_desc
-        else:
-            self.sort_col, self.sort_desc = key, key not in ("ticker", "name", "stock")
-        self._apply_sort()
-
-    def set_rows(self, rows: list[tuple[str, tuple, dict, tuple]]) -> None:
-        """rows: (iid, display_values, sort_values, tags)."""
-        wanted = {r[0] for r in rows}
-        for iid in self.get_children():
-            if iid not in wanted:
-                self.delete(iid)
-        for iid, values, sort_values, tags in rows:
-            if self.exists(iid):
-                self.item(iid, values=values, tags=tags)
-            else:
-                self.insert("", "end", iid=iid, values=values, tags=tags)
-            self._sort_values[iid] = sort_values
-        self._apply_sort()
-
-    def _apply_sort(self) -> None:
-        if not self.sort_col:
-            return
-        def key(iid):
-            v = self._sort_values.get(iid, {}).get(self.sort_col)
-            return (v is None, v if v is not None else 0)
-        items = sorted(self.get_children(), key=key, reverse=self.sort_desc)
-        if self.sort_desc:  # keep empty values at the bottom
-            items = [i for i in items if key(i)[0] is False] + [i for i in items if key(i)[0]]
-        for idx, iid in enumerate(items):
-            self.move(iid, "", idx)
-
-
-def scrolled(master, widget_factory):
-    frame = ttk.Frame(master, style="Panel.TFrame")
-    widget = widget_factory(frame)
-    sb = ttk.Scrollbar(frame, orient="vertical", command=widget.yview)
-    widget.configure(yscrollcommand=sb.set)
-    widget.pack(side="left", fill="both", expand=True)
-    sb.pack(side="right", fill="y")
-    return frame, widget
 
 
 # ---------------------------------------------------------------------- trading
@@ -653,7 +574,9 @@ class CompareTab(ttk.Frame):
     def refresh(self, ctx: Ctx) -> None:
         self._ctx = ctx
         ids = [s["stock_id"] for s in ctx.stocks]
-        if list(self.vars) != ids:
+        key = [(sid, ctx.colors.get(sid)) for sid in ids]
+        if getattr(self, "_check_key", None) != key:
+            self._check_key = key
             for w in self.checks_frame.winfo_children():
                 w.destroy()
             self.vars = {sid: self.vars.get(sid, tk.BooleanVar(value=True)) for sid in ids}
@@ -1255,7 +1178,9 @@ class App(tk.Tk):
         self.engine = engine
         self.export_dir = export_dir
         self.db = Storage(db_path)
+        self.settings = settings_mod.load()
         self.commands: CommandWriter = engine.writer  # shared, so both respect the same rate limit
+        self._release: Optional[updater.Release] = None
         self.title(f"{t('app.title')}  v{__version__}")
         self.geometry("1400x900")
         self.minsize(900, 600)
@@ -1277,12 +1202,31 @@ class App(tk.Tk):
         ttk.Button(header, text=t("common.settings"), style="Header.TButton",
                    command=self._open_settings).pack(side="right")
 
+        # update notice (hidden until a newer release is found)
+        self.update_bar = tk.Frame(self, bg=THEME["select"], padx=10, pady=6)
+        self.update_label = tk.Label(self.update_bar, text="", bg=THEME["select"], fg=THEME["fg"],
+                                     font=THEME["font_bold"])
+        self.update_label.pack(side="left")
+        bar_btn = dict(relief="flat", bd=0, padx=10, pady=2, cursor="hand2", font=THEME["font"])
+        tk.Button(self.update_bar, text=t("update.later"), command=self.update_bar.pack_forget,
+                  bg=THEME["panel_alt"], fg=THEME["fg"], **bar_btn).pack(side="right", padx=(6, 0))
+        self.install_btn = tk.Button(self.update_bar, text=t("update.install"), command=self._install_update,
+                                     bg=THEME["accent"], fg="#0d1117", **bar_btn)
+        if settings_mod.is_frozen():  # from source an installer would set up a separate copy
+            self.install_btn.pack(side="right", padx=(6, 0))
+        tk.Button(self.update_bar, text=t("update.open_page"), bg=THEME["panel_alt"], fg=THEME["fg"],
+                  command=lambda: self._release and webbrowser.open(self._release.page_url),
+                  **bar_btn).pack(side="right", padx=(6, 0))
+        self._header = header
+
         self.nb = ttk.Notebook(self)
         self.nb.pack(fill="both", expand=True, padx=8, pady=(6, 0))
-        self.tabs = [MarketTab(self.nb, self), CompareTab(self.nb, self),
-                     PortfolioTab(self.nb, self), NewsTab(self.nb, self), AutomationTab(self.nb, self)]
-        for tab, title in zip(self.tabs, (t("tab.market"), t("tab.compare"), t("tab.portfolio"), t("tab.news"),
-                                            t("tab.automation"))):
+        self.tabs = [MarketTab(self.nb, self), CompareTab(self.nb, self), PortfolioTab(self.nb, self),
+                     DividendTab(self.nb, self), JournalTab(self.nb, self), StatsTab(self.nb, self),
+                     NewsTab(self.nb, self), AutomationTab(self.nb, self)]
+        for tab, title in zip(self.tabs, (t("tab.market"), t("tab.compare"), t("tab.portfolio"),
+                                            t("tab.dividends"), t("tab.journal"), t("tab.stats"),
+                                            t("tab.news"), t("tab.automation"))):
             self.nb.add(tab, text=title)
         self.nb.bind("<<NotebookTabChanged>>", lambda e: self.after_idle(self.refresh_active))
 
@@ -1292,6 +1236,8 @@ class App(tk.Tk):
         self._ctx: Optional[Ctx] = None
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(300, self._tick)
+        if self.settings.check_updates:
+            self.after(3000, self.check_for_updates)
 
     # ---------------------------------------------------------------- refresh
 
@@ -1308,7 +1254,10 @@ class App(tk.Tk):
         stocks = db.stocks()
         known = {s["stock_id"] for s in stocks}
         stocks += [{"stock_id": sid} for sid in db.stock_ids() if sid not in known]
-        colors = {s["stock_id"]: STOCK_COLORS[i % len(STOCK_COLORS)] for i, s in enumerate(stocks)}
+        ids = [s["stock_id"] for s in stocks]
+        if settings_mod.assign_colors(self.settings, ids):
+            settings_mod.save(self.settings)
+        colors = {sid: self.settings.stock_colors[sid] for sid in ids}
         div_factor, div_count = db.dividend_factor()
         return Ctx(db=db, status=status, snap=snap, end_ms=db.latest_time_ms(), server_now_ms=server_now,
                    live=live, stocks=stocks, positions=db.current_positions(), colors=colors,
@@ -1362,14 +1311,77 @@ class App(tk.Tk):
                    snaps=fmt.num(counts["snapshots"], 0), news=fmt.num(counts["news"], 0),
                    game=st.game_version or "–", version=__version__) + err)
 
-    def _open_settings(self) -> None:
-        from .setup import open_settings_dialog
-        open_settings_dialog(self, on_restart=self._restart)
+    # --------------------------------------------------------------- settings
 
-    def _restart(self) -> None:
+    def _open_settings(self) -> None:
+        from .settings_dialog import SettingsDialog
+        SettingsDialog(self)
+
+    def apply_settings(self, new: settings_mod.Settings) -> None:
+        """Colours and the update switch apply at once; language/folders after a restart."""
+        self.settings = new
+        self.refresh_now()
+
+    def restart(self) -> None:
         self._on_close()
-        from ..settings import restart_app
-        restart_app()
+        settings_mod.restart_app()
+
+    # ---------------------------------------------------------------- updates
+
+    def check_for_updates(self, manual: bool = False, callback=None) -> None:
+        """Ask GitHub for the latest release in the background; show the notice if it is newer."""
+        def work() -> None:
+            try:
+                release, error = updater.fetch_latest(), None
+            except Exception as exc:
+                release, error = None, exc
+            self.after(0, lambda: self._update_checked(release, error, callback))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _update_checked(self, release, error, callback) -> None:
+        newer = release if release and updater.is_newer(release.version) else None
+        if newer:
+            self._release = newer
+            self.update_label.configure(text=t("update.banner", version=newer.version, current=__version__))
+            self.install_btn.configure(state="normal" if newer.installer_url else "disabled")
+            self.update_bar.pack(fill="x", after=self._header)
+        if callback:
+            callback(newer, error)
+
+    def _install_update(self) -> None:
+        release = self._release
+        if not release or not release.installer_url:
+            return
+        if not messagebox.askyesno(t("update.title"), t("update.confirm", version=release.version), parent=self):
+            return
+        self.install_btn.configure(state="disabled")
+
+        def progress(done: int, total: int) -> None:
+            pct = f" {done * 100 // total} %" if total else ""
+            self.after(0, lambda: self.update_label.configure(text=t("update.downloading") + pct))
+
+        def work() -> None:
+            try:
+                path = updater.download_installer(release, progress)
+                self.after(0, lambda: self._run_installer(path))
+            except Exception as exc:
+                error = exc  # `exc` is cleared when the except block ends
+                self.after(0, lambda: self._install_failed(error))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _install_failed(self, exc: Exception) -> None:
+        self.install_btn.configure(state="normal")
+        self.update_label.configure(text=t("update.failed", error=exc))
+
+    def _run_installer(self, path: Path) -> None:
+        try:
+            updater.launch_installer(path)
+        except OSError as exc:
+            self._install_failed(exc)
+            return
+        self._on_close()  # stops automation and recording; the installer starts the new version
 
     def _on_close(self) -> None:
         self.engine.stop()

@@ -66,6 +66,14 @@ class Collector(threading.Thread):
                 log.info("detected %d dividend payouts in the existing history", n)
         except Exception:
             log.exception("dividend backfill failed")
+        try:
+            cutoff = int((time.time() - config.RETENTION_DAYS * 86400) * 1000)
+            removed = storage.compact(cutoff, config.COMPACT_BUCKET_MS)
+            if any(removed):
+                log.info("compacted history older than %d days: %d prices, %d snapshots removed",
+                         config.RETENTION_DAYS, *removed)
+        except Exception:
+            log.exception("compaction failed")
         with self.status.lock:
             self.status.running = True
         try:

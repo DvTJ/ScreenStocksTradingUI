@@ -22,6 +22,7 @@ class SetupWizard(ttk.Frame):
                  on_cancel: Callable[[], None]):
         super().__init__(master, style="Panel.TFrame", padding=(24, 18))
         self.on_finish, self.on_cancel = on_finish, on_cancel
+        self.current = current
         self.step = 0
         self.lang_var = tk.StringVar(value=current.language or get_language())
         self.export_var = tk.StringVar(value=str(current.export_path))
@@ -80,8 +81,9 @@ class SetupWizard(ttk.Frame):
                 settings_mod.enable_mod_features(export_dir)
             except OSError as exc:
                 messagebox.showwarning(t("setup.title"), t("setup.mods_write_failed", error=exc), parent=self)
-        self.on_finish(Settings(language=self.lang_var.get(), export_dir=str(export_dir),
-                                db_path=self.db_var.get(), setup_done=True))
+        # keep options the wizard does not show (colours, update check, ...)
+        self.on_finish(replace(self.current, language=self.lang_var.get(), export_dir=str(export_dir),
+                               db_path=self.db_var.get(), setup_done=True))
 
     # ------------------------------------------------------------------ pages
 

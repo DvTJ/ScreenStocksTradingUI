@@ -26,6 +26,18 @@ automated rules such as stop-loss and take-profit.
   (upgrades/level) from the last payouts and shows the expected dividend per minute per stock, the total
   per minute/hour, dividends received in the selected range and a payout list.
 - **News** – market high/low alerts and scheduled events with countdown.
+- **Dividends tab** – ranking of all stocks by dividend yield per invested money (per minute / hour,
+  income per 1M invested), your own dividend per stock and whether shares are available to buy.
+- **Journal tab** – all trades with realized P/L (market price at trade time − average entry), win rate,
+  average win/loss, best/worst trade, P/L per stock and dividends received – for any time range.
+- **Statistics tab** – volatility per minute/hour, min/max/spread, time above/below the base price,
+  base crossings and the average price move 1/5/15 minutes after high/low market news.
+- **Settings dialog** (⚙) – language, folders, database; a fixed colour per stock (changeable);
+  data maintenance; update check.
+- **Update check** – on every start (can be switched off); shows a notice with a link to the release and,
+  in the installed app, downloads and starts the new installer on request.
+- **Data compaction** – prices and portfolio snapshots older than 7 days are thinned out to one value per
+  10 seconds at start-up; trades, news, dividends and rules are always kept.
 - German and English UI, setup wizard on first start.
 
 ## Installation
@@ -97,7 +109,8 @@ screenstocks/storage.py     SQLite schema and queries
 screenstocks/collector.py   background thread watching the export files
 screenstocks/commands.py    trade commands via the mod's command files
 screenstocks/automation.py  rule engine (stop-loss, take-profit, trailing stop, limits)
-screenstocks/settings.py    user settings and paths
+screenstocks/settings.py    user settings, paths, stock colours
+screenstocks/updater.py     update check and installer download (GitHub releases)
 screenstocks/i18n.py        German / English texts
 screenstocks/gui/           tkinter dashboard, chart, setup wizard, theme
 installer/                  Inno Setup script

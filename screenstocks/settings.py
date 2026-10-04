@@ -8,7 +8,7 @@ import json
 import os
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -77,6 +77,8 @@ class Settings:
     export_dir: str = ""
     db_path: str = ""
     setup_done: bool = False
+    check_updates: bool = True
+    stock_colors: dict = field(default_factory=dict)   # stock id -> "#rrggbb"
 
     @property
     def export_path(self) -> Path:
@@ -85,6 +87,27 @@ class Settings:
     @property
     def db_file(self) -> Path:
         return Path(self.db_path) if self.db_path else default_db_path()
+
+
+# Colours handed out to stocks in order of first appearance; a stock keeps its colour.
+PALETTE = ["#58a6ff", "#3fb950", "#f0883e", "#d2a8ff", "#ff7b72",
+           "#56d4dd", "#e3b341", "#a5d6ff", "#7ee787", "#ffa198"]
+
+
+def default_colors(stock_ids) -> dict:
+    return {sid: PALETTE[i % len(PALETTE)] for i, sid in enumerate(sorted(stock_ids))}
+
+
+def assign_colors(settings: "Settings", stock_ids) -> bool:
+    """Give new stocks a colour that is not taken yet. Returns True if settings changed."""
+    colors = settings.stock_colors
+    changed = False
+    for sid in sorted(stock_ids):
+        if sid not in colors:
+            used = set(colors.values())
+            colors[sid] = next((c for c in PALETTE if c not in used), PALETTE[len(colors) % len(PALETTE)])
+            changed = True
+    return changed
 
 
 def load() -> Settings:

@@ -27,6 +27,19 @@ führt automatische Regeln wie Stop-Loss und Take-Profit aus.
   Dividenden-Faktor (Upgrades/Level) aus den letzten Auszahlungen und zeigt die erwartete Dividende pro Minute
   je Aktie, die Summe pro Minute/Stunde, erhaltene Dividenden im Zeitraum und eine Auszahlungsliste.
 - **News** – Hoch/Tief-Meldungen und geplante Ereignisse mit Countdown.
+- **Tab Dividenden** – Ranking aller Aktien nach Dividendenrendite auf das eingesetzte Geld (pro Minute /
+  Stunde, Ertrag je 1 Mio.), deine eigene Dividende je Aktie und ob Aktien kaufbar sind.
+- **Tab Journal** – alle Trades mit realisierter G/V (Marktkurs zum Trade-Zeitpunkt − Ø Einstieg),
+  Trefferquote, Ø Gewinn/Verlust, bester/schlechtester Trade, G/V je Aktie und erhaltene Dividenden – für
+  jeden Zeitraum.
+- **Tab Statistik** – Volatilität pro Minute/Stunde, Min/Max/Spanne, Zeit über/unter dem Basispreis,
+  Kreuzungen der Basis und Ø Kursbewegung 1/5/15 Minuten nach Hoch-/Tief-Meldungen.
+- **Einstellungen** (⚙) – Sprache, Ordner, Datenbank; feste Farbe je Aktie (änderbar); Datenpflege;
+  Update-Prüfung.
+- **Update-Prüfung** – bei jedem Start (abschaltbar); Hinweis mit Link zum Release, in der installierten App
+  auf Wunsch Download und Start des neuen Installers.
+- **Verdichten** – Kurse und Portfolio-Snapshots älter als 7 Tage werden beim Start auf einen Wert pro
+  10 Sekunden reduziert; Trades, News, Dividenden und Regeln bleiben immer vollständig.
 - Oberfläche auf Deutsch und Englisch, Einrichtungsassistent beim ersten Start.
 
 ## Installation

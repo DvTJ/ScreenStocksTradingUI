@@ -6,6 +6,7 @@ while the collector writes.
 
 import bisect
 import csv
+import os
 import sqlite3
 import statistics
 from datetime import datetime
@@ -519,7 +520,8 @@ class Storage:
 
         kind is buy / sell / short / cover. The fill price of opening trades is
         recovered from the change of the average price; closing trades use the
-        market price at that moment.
+        market price at that moment. Closing trades also carry the average entry
+        price before the trade and the realized P/L based on the market price.
         """
         rows = self.conn.execute(
             """SELECT server_ms, shares_owned, avg_buy_price, shares_shorted, avg_short_price
@@ -547,8 +549,74 @@ class Storage:
                         price = None
                 if price is None:
                     price = market
-                out.append(dict(time_ms=t, kind=kind, shares=abs(d), price=price))
+                entry = pnl = None
+                if d < 0 and price and old_avg:
+                    entry = old_avg
+                    pnl = (price - old_avg) * abs(d) if kind == "sell" else (old_avg - price) * abs(d)
+                out.append(dict(time_ms=t, stock_id=stock_id, kind=kind, shares=abs(d), price=price,
+                                entry=entry, pnl=pnl))
         return out
+
+    # ------------------------------------------------------------ statistics
+
+    def bucket_closes(self, stock_id: str, since_ms: int, until_ms: int, bucket_ms: int) -> list[tuple[int, float]]:
+        """Last price per time bucket: [(bucket_start_ms, price)], oldest first."""
+        # SQLite returns the bare column `price` from the row that matched MAX(time_ms).
+        rows = self.conn.execute(
+            """SELECT time_ms / ? AS b, price, MAX(time_ms) FROM prices
+               WHERE stock_id=? AND time_ms BETWEEN ? AND ? GROUP BY b ORDER BY b""",
+            (bucket_ms, stock_id, since_ms, until_ms)).fetchall()
+        return [(b * bucket_ms, p) for b, p, _ in rows]
+
+    def base_split(self, stock_id: str, base: float, since_ms: int, until_ms: int) -> tuple[int, int, int]:
+        """(samples above base, samples below base, all samples) in the range."""
+        row = self.conn.execute(
+            """SELECT COALESCE(SUM(price > ?), 0), COALESCE(SUM(price < ?), 0), COUNT(*) FROM prices
+               WHERE stock_id=? AND time_ms BETWEEN ? AND ?""",
+            (base, base, stock_id, since_ms, until_ms)).fetchone()
+        return row[0], row[1], row[2]
+
+    # ------------------------------------------------------------ maintenance
+
+    def compact(self, older_than_ms: int, bucket_ms: int = 10_000) -> tuple[int, int]:
+        """Thin out prices and snapshots older than the cutoff to one row per bucket.
+
+        The last real sample of every bucket is kept. Trades, news, dividends,
+        rules and logs are never touched. Returns (prices removed, snapshots removed).
+        """
+        c = self.conn
+        doomed, last_key, last_tick = [], None, None
+        # rows arrive ordered, so the last row of each (stock, bucket) group is the one to keep
+        for sid, tick, ts in c.execute(
+                "SELECT stock_id, tick, time_ms FROM prices WHERE time_ms < ? ORDER BY stock_id, time_ms, tick",
+                (older_than_ms,)):
+            key = (sid, ts // bucket_ms)
+            if key == last_key:
+                doomed.append((sid, last_tick))
+            last_key, last_tick = key, tick
+        c.executemany("DELETE FROM prices WHERE stock_id=? AND tick=?", doomed)
+
+        doomed_snaps, last_bucket, last_id = [], None, None
+        for sid_, ts in c.execute("SELECT id, server_ms FROM snapshots WHERE server_ms < ? ORDER BY server_ms, id",
+                                  (older_than_ms,)):
+            bucket = ts // bucket_ms
+            if bucket == last_bucket:
+                doomed_snaps.append((last_id,))
+            last_bucket, last_id = bucket, sid_
+        c.executemany("DELETE FROM snapshots WHERE id=?", doomed_snaps)
+        c.commit()
+        return len(doomed), len(doomed_snaps)
+
+    def vacuum(self) -> None:
+        """Give freed pages back to the file system (needs a moment on large files)."""
+        self.conn.execute("VACUUM")
+        self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    def db_info(self) -> dict:
+        size = sum(os.path.getsize(f) for f in (self.path, Path(f"{self.path}-wal"))
+                   if os.path.exists(f))
+        oldest = self.conn.execute("SELECT MIN(time_ms) FROM prices").fetchone()[0]
+        return dict(size=size, oldest_ms=oldest, **self.counts())
 
     # ------------------------------------------------------------ automation
 

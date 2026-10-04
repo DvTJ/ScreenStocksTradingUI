@@ -380,6 +380,135 @@ STRINGS: dict[str, tuple[str, str]] = {
                       "Restart now?"),
     "setup.mods_write_failed": ("mod-settings.json konnte nicht geschrieben werden:\n{error}",
                                 "Could not write mod-settings.json:\n{error}"),
+    # ---- new tabs
+    "tab.dividends": ("  Dividenden  ", "  Dividends  "),
+    "tab.journal": ("  Journal  ", "  Journal  "),
+    "tab.stats": ("  Statistik  ", "  Statistics  "),
+
+    # ---- dividend ranking
+    "div.col_rate": ("Satz / min", "Rate / min"),
+    "div.col_yield_min": ("Rendite / min", "Yield / min"),
+    "div.col_yield_h": ("Rendite / Std.", "Yield / h"),
+    "div.col_per_mio": ("Ertrag je 1 Mio. / Std.", "Per 1M invested / h"),
+    "div.col_own": ("Deine Div. / min", "Your div. / min"),
+    "div.col_buyable": ("Kaufbar", "Buyable"),
+    "div.info_factor": ("Rendite = Dividendensatz × dein Faktor ×{f} (ermittelt aus {n} Auszahlungen), "
+                        "bezogen auf das investierte Geld zum aktuellen Kurs.",
+                        "Yield = dividend rate × your factor ×{f} (learned from {n} payouts), "
+                        "relative to the money invested at the current price."),
+    "div.info_no_factor": ("Faktor noch unbekannt – Rendite ohne Faktor (×1) gerechnet. Er wird ab der ersten "
+                           "erkannten Auszahlung ermittelt.",
+                           "Factor not known yet – yield shown without factor (×1). It is learned from the first "
+                           "detected payout."),
+    "div.note": ("Dividenden werden jede volle Minute auf Long-Positionen gezahlt (Stückzahl × Kurs × Satz × Faktor). "
+                 "Kaufbar = es sind aktuell Aktien am Markt verfügbar.",
+                 "Dividends are paid every full minute on long positions (shares × price × rate × factor). "
+                 "Buyable = shares are currently available on the market."),
+
+    # ---- journal
+    "journal.realized": ("Realisierte G/V", "Realized P/L"),
+    "journal.dividends": ("Dividenden", "Dividends"),
+    "journal.total": ("Gesamt", "Total"),
+    "journal.hit_rate": ("Trefferquote", "Win rate"),
+    "journal.avg_win": ("Ø Gewinn", "Avg win"),
+    "journal.avg_loss": ("Ø Verlust", "Avg loss"),
+    "journal.best": ("Bester Trade", "Best trade"),
+    "journal.worst": ("Schlechtester Trade", "Worst trade"),
+    "journal.note": ("G/V von Verkauf/Cover = (Marktkurs zum Trade-Zeitpunkt − Ø Einstieg) × Stück; Schätzung "
+                     "ohne Gebühren.",
+                     "P/L of sell/cover = (market price at trade time − avg entry) × shares; estimate without fees."),
+    "journal.trades": ("Trades", "Trades"),
+    "journal.per_stock": ("G/V je Aktie", "P/L per stock"),
+    "journal.col_kind": ("Art", "Type"),
+    "journal.col_shares": ("Stück", "Shares"),
+    "journal.col_entry": ("Ø Einstieg", "Avg entry"),
+    "journal.col_closed": ("Schließungen", "Closings"),
+    "journal.col_wins": ("Gewinne", "Wins"),
+    "journal.col_realized": ("Realisiert", "Realized"),
+
+    # ---- statistics
+    "stats.prices": ("Kursverhalten", "Price behaviour"),
+    "stats.prices_note": ("Volatilität = Ø absolute Kursänderung pro Minute bzw. Stunde (Schlusskurse). "
+                          "Über/unter Basis = Anteil der Zeit; Kreuzungen = Wechsel über/unter den Basispreis "
+                          "(Minutenwerte).",
+                          "Volatility = average absolute price change per minute / hour (closing prices). "
+                          "Above/below base = share of time; crossings = switches across the base price "
+                          "(minute values)."),
+    "stats.news": ("Kursverhalten nach Markt-News", "Price behaviour after market news"),
+    "stats.news_note": ("Ø Kursänderung 1 / 5 / 15 Minuten nach einer Hoch- bzw. Tief-Meldung, gemessen vom Preis "
+                        "in der Meldung.",
+                        "Average price change 1 / 5 / 15 minutes after a high or low alert, measured from the price "
+                        "in the alert."),
+    "stats.col_min": ("Min", "Min"),
+    "stats.col_max": ("Max", "Max"),
+    "stats.col_spread": ("Spanne", "Spread"),
+    "stats.col_vol_min": ("Vol. / min", "Vol. / min"),
+    "stats.col_vol_h": ("Vol. / Std.", "Vol. / h"),
+    "stats.col_dist": ("Abst. Basis", "Dist. base"),
+    "stats.col_above": ("Über Basis", "Above base"),
+    "stats.col_below": ("Unter Basis", "Below base"),
+    "stats.col_cross": ("Kreuzungen", "Crossings"),
+    "stats.col_n_high": ("# Hoch", "# High"),
+    "stats.col_n_low": ("# Tief", "# Low"),
+    "stats.col_high_1": ("Hoch +1m", "High +1m"),
+    "stats.col_high_5": ("Hoch +5m", "High +5m"),
+    "stats.col_high_15": ("Hoch +15m", "High +15m"),
+    "stats.col_low_1": ("Tief +1m", "Low +1m"),
+    "stats.col_low_5": ("Tief +5m", "Low +5m"),
+    "stats.col_low_15": ("Tief +15m", "Low +15m"),
+    "stats.updated": ("berechnet {time} (alle {s} s)", "calculated {time} (every {s} s)"),
+
+    # ---- settings dialog
+    "settings.title": ("Einstellungen", "Settings"),
+    "settings.tab_general": ("Allgemein", "General"),
+    "settings.tab_colors": ("Farben", "Colours"),
+    "settings.tab_data": ("Daten", "Data"),
+    "settings.tab_updates": ("Updates", "Updates"),
+    "settings.save": ("Speichern", "Save"),
+    "settings.restart_note": ("Sprache, Ordner und Datenbank werden nach einem Neustart der App wirksam.",
+                              "Language, folder and database take effect after restarting the app."),
+    "settings.colors_text": ("Jede Aktie behält ihre Farbe dauerhaft – auch wenn neue Aktien dazukommen. "
+                             "Klick auf ein Farbfeld, um die Farbe zu ändern.",
+                             "Every stock keeps its colour permanently, even when new stocks appear. "
+                             "Click a colour to change it."),
+    "settings.colors_reset": ("Standardfarben wiederherstellen", "Restore default colours"),
+    "settings.pick_color": ("Farbe für {stock}", "Colour for {stock}"),
+    "settings.data_text": ("Kurse und Portfolio-Snapshots, die älter als {days} Tage sind, werden beim Start "
+                           "automatisch auf einen Wert pro {s} Sekunden verdichtet (der letzte echte Kurs bleibt). "
+                           "Trades, News, Dividenden, Regeln und Protokolle bleiben immer vollständig.",
+                           "Prices and portfolio snapshots older than {days} days are thinned out at start-up "
+                           "to one value per {s} seconds (the last real price is kept). Trades, news, dividends, "
+                           "rules and logs are always kept in full."),
+    "settings.data_info": ("Datei: {path}\nGröße: {size} MB · {prices} Kurse · {snaps} Snapshots · ältester Kurs: "
+                           "{oldest}",
+                           "File: {path}\nSize: {size} MB · {prices} prices · {snaps} snapshots · oldest price: "
+                           "{oldest}"),
+    "settings.compact_now": ("Jetzt verdichten und Datei verkleinern", "Compact now and shrink the file"),
+    "settings.compacting": ("Verdichte … (kann bei großen Datenbanken etwas dauern)",
+                            "Compacting … (may take a while for large databases)"),
+    "settings.compact_done": ("Fertig: {prices} Kurse und {snaps} Snapshots entfernt, {before} MB → {after} MB.",
+                              "Done: {prices} prices and {snaps} snapshots removed, {before} MB → {after} MB."),
+    "settings.version": ("Installierte Version: {version}", "Installed version: {version}"),
+    "settings.check_on_start": ("Bei jedem Start nach Updates suchen", "Check for updates on every start"),
+    "settings.check_now": ("Jetzt nach Updates suchen", "Check for updates now"),
+
+    # ---- updates
+    "update.title": ("Update", "Update"),
+    "update.banner": ("Neue Version {version} verfügbar (installiert: {current})",
+                      "New version {version} available (installed: {current})"),
+    "update.open_page": ("Release ansehen", "View release"),
+    "update.install": ("Jetzt installieren", "Install now"),
+    "update.later": ("Später", "Later"),
+    "update.confirm": ("Version {version} herunterladen und installieren?\n\nDie App schließt sich dabei "
+                       "(Aufzeichnung und Automatik stoppen) und der Installer startet die neue Version.",
+                       "Download and install version {version}?\n\nThe app closes (recording and automation "
+                       "stop) and the installer starts the new version."),
+    "update.downloading": ("Lade Update herunter …", "Downloading update …"),
+    "update.checking": ("Suche nach Updates …", "Checking for updates …"),
+    "update.up_to_date": ("Du hast die neueste Version ({version}).", "You have the latest version ({version})."),
+    "update.available": ("Version {version} ist verfügbar – siehe Hinweis oben im Hauptfenster.",
+                         "Version {version} is available – see the notice at the top of the main window."),
+    "update.failed": ("Update-Prüfung fehlgeschlagen: {error}", "Update check failed: {error}"),
 }
 
 

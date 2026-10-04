@@ -17,3 +17,10 @@ POLL_INTERVAL_S = 0.25
 GUI_REFRESH_MS = 1000
 # Data older than this is treated as "not live" (milliseconds).
 STALE_AFTER_MS = 5000
+
+# GitHub repository used for the update check.
+GITHUB_REPO = "DvTJ/ScreenStocksTradingUI"
+
+# Prices and snapshots older than this are thinned out to one row per bucket at start-up.
+RETENTION_DAYS = 7
+COMPACT_BUCKET_MS = 10_000
