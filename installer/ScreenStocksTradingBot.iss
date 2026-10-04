@@ -36,7 +36,7 @@ CloseApplications=yes
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "german"; MessagesFile: "compiler:Languages\German.isl"
-Name: "french"; MessagesFile: "compiler:LanguagesFrench.isl"
+Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
