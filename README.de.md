@@ -46,7 +46,7 @@ führt automatische Regeln wie Stop-Loss und Take-Profit aus.
   auf Wunsch Download und Start des neuen Installers.
 - **Verdichten** – Kurse und Portfolio-Snapshots älter als 7 Tage werden beim Start auf einen Wert pro
   10 Sekunden reduziert; Trades, News, Dividenden und Regeln bleiben immer vollständig.
-- Oberfläche auf Deutsch und Englisch, Einrichtungsassistent beim ersten Start.
+- Oberfläche auf Deutsch, Englisch und Französisch, Einrichtungsassistent beim ersten Start.
 
 ## Installation
 
@@ -56,7 +56,7 @@ Zu jedem Release gibt es zusätzlich eine portable ZIP-Datei.
 
 Beim ersten Start fragt ein kurzer Assistent:
 
-1. **Sprache** – Deutsch / English
+1. **Sprache** – Deutsch / English / Français
 2. **Spiel-Ordner** – der `export`-Ordner des Mods, normalerweise
    `%USERPROFILE%\AppData\LocalLow\Conradical Games\Screen Stocks\mods\export`
    (wird automatisch erkannt). Der Assistent kann `export` und `commands` in der

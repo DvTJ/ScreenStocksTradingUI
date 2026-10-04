@@ -44,7 +44,7 @@ automated rules such as stop-loss and take-profit.
   in the installed app, downloads and starts the new installer on request.
 - **Data compaction** – prices and portfolio snapshots older than 7 days are thinned out to one value per
   10 seconds at start-up; trades, news, dividends and rules are always kept.
-- German and English UI, setup wizard on first start.
+- German, English and French UI, setup wizard on first start.
 
 ## Installation
 
@@ -54,7 +54,7 @@ A portable ZIP is attached to every release as well.
 
 On first start a short setup wizard asks for:
 
-1. **Language** – Deutsch / English
+1. **Language** – Deutsch / English / Français
 2. **Game folder** – the mod's `export` folder, usually
    `%USERPROFILE%\AppData\LocalLow\Conradical Games\Screen Stocks\mods\export`
    (detected automatically). The wizard can switch on `export` and `commands`
@@ -118,7 +118,7 @@ screenstocks/events.py      trading on announced pumps / crashes
 screenstocks/automation.py  rule engine (stop-loss, take-profit, trailing stop, limits)
 screenstocks/settings.py    user settings, paths, stock colours
 screenstocks/updater.py     update check and installer download (GitHub releases)
-screenstocks/i18n.py        German / English texts
+screenstocks/i18n/            UI texts, one file per language (de, en, fr)
 screenstocks/gui/           tkinter dashboard, chart, setup wizard, theme
 installer/                  Inno Setup script
 tools/make_icon.py          generates assets/icon.ico
