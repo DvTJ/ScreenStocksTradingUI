@@ -19,6 +19,10 @@ automated rules such as stop-loss and take-profit.
   limit short. Optional "confirm after N seconds" against short spikes. By default a rule fires once and
   disables itself; with **↻ Repeat** it stays active and fires again each time the price leaves the
   trigger zone and reaches it again. Cooldown / rate-limit rejections are retried automatically.
+- **Announced events** – the game announces pumps (~1 min ahead) and crashes (hours ahead). With the switches
+  in the Automation tab (off by default) the app buys after a pump announcement, sells on the pullback from the
+  peak, shorts and covers near the starting price; before a crash it sells and shorts N minutes ahead and covers
+  and buys back on the rebound from the low. All thresholds are adjustable.
 - **Compare** – all stocks normalised to % change on one chart.
 - **Portfolio** – net worth and cash over time, open positions, position changes.
 - **Dividends** – the export only contains the dividend rate, so payouts are detected from cash increases
@@ -108,6 +112,7 @@ screenstocks/reader.py      robust JSON reading + parsing
 screenstocks/storage.py     SQLite schema and queries
 screenstocks/collector.py   background thread watching the export files
 screenstocks/commands.py    trade commands via the mod's command files
+screenstocks/events.py      trading on announced pumps / crashes
 screenstocks/automation.py  rule engine (stop-loss, take-profit, trailing stop, limits)
 screenstocks/settings.py    user settings, paths, stock colours
 screenstocks/updater.py     update check and installer download (GitHub releases)

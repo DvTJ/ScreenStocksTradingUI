@@ -15,6 +15,7 @@ from typing import Optional
 from . import config
 from .collector import Collector
 from .commands import CommandWriter, action_name, reason_text, status_text, ACTIONS
+from .events import EventTrader, load_settings as load_event_settings
 from .i18n import t
 from .storage import Storage
 
@@ -127,6 +128,7 @@ class AutomationEngine(threading.Thread):
         self._rearm: set[int] = set()               # repeat rules waiting for the price to leave the trigger zone
         self._seen: set[int] = set()
         self.state = "starting"                     # starting / active / paused / not_live
+        self.events = EventTrader(writer)           # announced pumps / crashes (events.py)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -177,14 +179,16 @@ class AutomationEngine(threading.Thread):
                     d.pop(rid)
         self._rearm &= active_ids
         self._seen &= active_ids
-        if not rules:
-            return
 
         prices = {s["stock_id"]: s["last_price"] for s in db.stocks()}
         positions = db.current_positions()
         snap = db.latest_snapshot() or {}
         server_now = (snap.get("server_ms") or 0) + int((time.time() - (st.last_market_read or time.time())) * 1000)
         now = time.time()
+
+        self.events.step(db, load_event_settings(db), live, enabled, server_now, prices, positions, snap)
+        if not rules:
+            return
 
         for rule in rules:
             rid, sid = rule["id"], rule["stock_id"]

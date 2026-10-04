@@ -43,6 +43,22 @@ def action_label(game_action: str) -> str:
     return game_action
 
 
+def _replace(src: Path, dst: Path, attempts: int = 40, delay_s: float = 0.025) -> None:
+    """Atomic replace that tolerates the game holding the file open for a moment.
+
+    The mod reads every command file about every 50 ms; on Windows replacing a file
+    that is open in another process fails with "access denied", so retry briefly.
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay_s)
+
+
 def normalize_percent(value: float) -> int:
     """Same rounding the game applies (Mathf.RoundToInt + Clamp 1..100)."""
     return max(1, min(100, int(round(float(value)))))
@@ -89,7 +105,7 @@ class CommandWriter:
                 time.sleep(wait)
             tmp.write_text(json.dumps({"execute": True, "percent": pct}, indent=2), encoding="utf-8")
             # Atomic replace so the game never sees a half-written file.
-            os.replace(tmp, path)
+            _replace(tmp, path)
             self._last_send = time.time()
         return SentCommand(stock_id, action, pct, path)
 
@@ -101,7 +117,7 @@ class CommandWriter:
                 return False
             tmp = sent.path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps({"execute": False, "percent": sent.percent}, indent=2), encoding="utf-8")
-            os.replace(tmp, sent.path)
+            _replace(tmp, sent.path)
             return True
 
     def is_pending(self, sent: SentCommand) -> bool:

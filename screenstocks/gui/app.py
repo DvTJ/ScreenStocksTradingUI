@@ -16,6 +16,7 @@ from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, Automatio
                           describe_trigger, has_position, kind_name, mode_name, needs_position, side_name,
                           trigger_price)
 from ..collector import Collector, CollectorStatus
+from ..events import EventSettings, load_settings as load_event_settings, save_settings as save_event_settings
 from ..commands import ACTIONS, CommandWriter, action_label, action_name, normalize_percent, reason_text, status_text
 from ..i18n import t
 from ..storage import Storage
@@ -835,6 +836,17 @@ class NewsTab(ttk.Frame):
 
 
 class AutomationTab(ttk.Frame):
+    EVENT_COLUMNS = [
+        ("when", "event.col_when", 130, "w"),
+        ("in", "event.col_in", 80, "e"),
+        ("stock", "common.stock", 75, "w"),
+        ("type", "event.col_type", 70, "w"),
+        ("target", "event.col_target", 85, "e"),
+        ("phase", "event.col_phase", 260, "w"),
+    ]
+    PUMP_PARAMS = ("pump_buy_pct", "pump_drop_pct", "pump_start_share", "pump_safety_s", "pump_short_pct",
+                   "pump_cover_pct", "pump_cover_max_s")
+    CRASH_PARAMS = ("crash_minutes", "crash_short_pct", "crash_rise_pct", "crash_safety_s", "crash_rebuy_pct")
     RULE_COLUMNS = [
         ("id", "#", 40, "e"),
         ("stock", "common.stock", 75, "w"),
@@ -869,6 +881,8 @@ class AutomationTab(ttk.Frame):
                        font=("Segoe UI", 11, "bold"), highlightthickness=0, bd=0).pack(side="left", padx=4)
         self.engine_state = ttk.Label(top, text="", style="Section.TLabel")
         self.engine_state.pack(side="left", padx=12)
+
+        self._build_event_card()
 
         # ---- form
         form = ttk.Frame(self, style="Card.TFrame", padding=(10, 8))
@@ -945,6 +959,16 @@ class AutomationTab(ttk.Frame):
         self.rules_tree.bind("<Double-1>", lambda e: self._toggle_rule())
         self.rules_tree.bind("<Delete>", lambda e: self._delete())
         paned.add(rules_frame, weight=3)
+
+        events_frame = ttk.Frame(paned, style="Panel.TFrame")
+        ttk.Label(events_frame, text=t("event.title"), style="Section.TLabel").pack(anchor="w", padx=4, pady=(6, 2))
+        f, self.events_tree = scrolled(events_frame, lambda m: SortableTree(m, self.EVENT_COLUMNS, height=4))
+        f.pack(fill="both", expand=True)
+        self.events_tree.tag_configure("pump", foreground=THEME["up"])
+        self.events_tree.tag_configure("crash", foreground=THEME["down"])
+        self.events_tree.tag_configure("past", foreground=THEME["muted"])
+        self.events_tree.sort_col, self.events_tree.sort_desc = "when", True
+        paned.add(events_frame, weight=1)
 
         log_frame = ttk.Frame(paned, style="Panel.TFrame")
         ttk.Label(log_frame, text=t("auto.log"), style="Section.TLabel").pack(anchor="w", padx=4, pady=(6, 2))
@@ -1126,8 +1150,86 @@ class AutomationTab(ttk.Frame):
             self._ctx.db.log_rule(int(time.time() * 1000), rid, "", t("rule.log.deleted"))
             self.app.refresh_now()
 
+    # ---------------------------------------------------------------- events
+
+    def _build_event_card(self) -> None:
+        card = ttk.Frame(self, style="Card.TFrame", padding=(10, 6))
+        card.pack(fill="x", padx=4, pady=(0, 4))
+        settings = load_event_settings(self.app.db)
+        self.ev_vars: dict[str, tk.Variable] = {
+            "pumps": tk.BooleanVar(value=settings.pumps), "crashes": tk.BooleanVar(value=settings.crashes)}
+        head = ttk.Frame(card, style="Card.TFrame")
+        head.pack(fill="x")
+        ttk.Label(head, text=t("event.title"), style="CardValue.TLabel").pack(side="left", padx=(0, 16))
+        for key, label in (("pumps", "event.switch_pumps"), ("crashes", "event.switch_crashes")):
+            tk.Checkbutton(head, text=t(label), variable=self.ev_vars[key], command=self._save_events,
+                           bg=THEME["panel_alt"], fg=THEME["fg"], selectcolor=THEME["panel"],
+                           activebackground=THEME["panel_alt"], activeforeground=THEME["fg"],
+                           font=THEME["font_bold"], highlightthickness=0, bd=0).pack(side="left", padx=(0, 16))
+        for row_label, keys in (("event.pump_params", self.PUMP_PARAMS), ("event.crash_params", self.CRASH_PARAMS)):
+            row = ttk.Frame(card, style="Card.TFrame")
+            row.pack(fill="x", pady=(4, 0))
+            ttk.Label(row, text=t(row_label), style="CardValue.TLabel", width=7).pack(side="left")
+            for key in keys:
+                var = tk.StringVar(value=f"{getattr(settings, key):g}")
+                self.ev_vars[key] = var
+                ttk.Label(row, text=t(f"event.p.{key}"), style="CardMuted.TLabel").pack(side="left", padx=(8, 3))
+                spin = tk.Spinbox(row, from_=0, to=100000, width=5, textvariable=var, justify="right",
+                                  bg=THEME["panel"], fg=THEME["fg"], buttonbackground=THEME["panel_alt"],
+                                  insertbackground=THEME["fg"], relief="flat", command=self._save_events)
+                spin.pack(side="left")
+                spin.bind("<FocusOut>", lambda e: self._save_events())
+                spin.bind("<Return>", lambda e: self._save_events())
+        ttk.Label(card, text=t("event.help"), style="CardMuted.TLabel", wraplength=1300,
+                  justify="left").pack(anchor="w", pady=(4, 0))
+
+    def _save_events(self) -> None:
+        """Store the switches and parameters; invalid numbers keep their previous value."""
+        old = load_event_settings(self.app.db)
+        values = {"pumps": bool(self.ev_vars["pumps"].get()), "crashes": bool(self.ev_vars["crashes"].get())}
+        for key in self.PUMP_PARAMS + self.CRASH_PARAMS:
+            current = getattr(old, key)
+            try:
+                v = float(str(self.ev_vars[key].get()).replace(",", "."))
+                values[key] = int(v) if isinstance(current, int) else v
+                if values[key] < 0:
+                    raise ValueError
+            except ValueError:
+                values[key] = current
+                self.ev_vars[key].set(f"{current:g}")
+        new = EventSettings(**values)
+        if new != old:
+            save_event_settings(self.app.db, new)
+            changes = [k for k in ("pumps", "crashes") if getattr(new, k) != getattr(old, k)]
+            for k in changes:
+                self.app.db.log_rule(int(time.time() * 1000), None, "",
+                                     f"{t('event.switch_' + k)}: {t('auto.col_active') if getattr(new, k) else t('event.off')}")
+
+    def _refresh_events(self, ctx: Ctx) -> None:
+        settings = load_event_settings(ctx.db)
+        now = ctx.server_now_ms or 0
+        rows = []
+        for ev in ctx.db.recent_events(50):
+            sched = ev["scheduled_ms"]
+            on = settings.pumps if ev["direction"] == "pump" else settings.crashes
+            phase = ev["phase"]
+            future = sched >= now
+            if phase is None or (not on and phase in ("wait_buy", "wait_pre")):
+                phase_text = t("event.off") if future and not on else "–"
+            else:
+                phase_text = t(f"event.phase.{phase}", default=phase)
+            rows.append((ev["occurrence_id"], (
+                fmt.clock(sched, with_date=True), fmt.duration((sched - now) / 1000) if future else "–",
+                ev["stock_id"], t(f"event.{ev['direction']}", default=ev["direction"]), fmt.price(ev["target_price"]),
+                phase_text),
+                dict(when=sched, stock=ev["stock_id"], type=ev["direction"], target=ev["target_price"],
+                     phase=phase_text, **{"in": sched - now}),
+                (ev["direction"],) if future else ("past",)))
+        self.events_tree.set_rows(rows)
+
     def refresh(self, ctx: Ctx) -> None:
         self._ctx = ctx
+        self._refresh_events(ctx)
         ids = [s["stock_id"] for s in ctx.stocks]
         if list(self.stock_cb.cget("values")) != ids:
             self.stock_cb.configure(values=ids)

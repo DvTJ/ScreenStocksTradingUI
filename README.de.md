@@ -20,6 +20,10 @@ führt automatische Regeln wie Stop-Loss und Take-Profit aus.
   einmal aus und deaktiviert sich; mit **↻ Wiederholen** bleibt sie aktiv und löst jedes Mal erneut aus,
   wenn der Kurs den Auslösebereich verlassen und wieder erreicht hat. Bei Cooldown/Rate-Limit wird automatisch
   erneut versucht.
+- **Angekündigte Ereignisse** – das Spiel kündigt Pumps (~1 min vorher) und Crashs (Stunden vorher) an. Mit den
+  Schaltern im Automatik-Tab (standardmäßig aus) kauft die App nach einer Pump-Ankündigung, verkauft beim Rückgang
+  von der Spitze, shortet und covert nahe dem Ausgangskurs; vor einem Crash verkauft und shortet sie N Minuten
+  vorher und covert und kauft beim Anstieg vom Tief zurück. Alle Schwellen sind einstellbar.
 - **Vergleich** – alle Aktien normiert in % in einem Chart.
 - **Portfolio** – Nettovermögen und Bargeld im Verlauf, offene Positionen, Positionsänderungen.
 - **Dividenden** – der Export enthält nur den Dividendensatz; Auszahlungen werden daher an Bargeld-Anstiegen

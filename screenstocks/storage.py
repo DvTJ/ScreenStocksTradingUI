@@ -9,6 +9,7 @@ import csv
 import os
 import sqlite3
 import statistics
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
@@ -140,6 +141,18 @@ CREATE TABLE IF NOT EXISTS dividends (
     amount    REAL NOT NULL,
     base      REAL,
     factor    REAL
+);
+
+-- Progress of the event trader (events.py) per announced event.
+CREATE TABLE IF NOT EXISTS event_trades (
+    occurrence_id TEXT PRIMARY KEY,
+    stock_id      TEXT,
+    direction     TEXT,
+    phase         TEXT,
+    start_price   REAL,
+    extreme       REAL,
+    info          TEXT,
+    updated_ms    INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -514,6 +527,42 @@ class Storage:
                FROM scheduled_news ORDER BY scheduled_ms DESC LIMIT ?""",
             (limit,),
         ).fetchall()
+
+    # ---------------------------------------------------------- event trading
+
+    EVENT_COLUMNS = ("occurrence_id", "stock_id", "direction", "target_price", "scheduled_ms", "published_ms",
+                     "phase", "start_price", "extreme", "info")
+
+    def _events(self, where: str, args: tuple, limit: int = 500) -> list[dict]:
+        rows = self.conn.execute(
+            f"""SELECT s.occurrence_id, s.stock_id, s.direction, s.target_price, s.scheduled_ms, s.published_ms,
+                       e.phase, e.start_price, e.extreme, e.info
+                FROM scheduled_news s LEFT JOIN event_trades e ON e.occurrence_id = s.occurrence_id
+                WHERE {where} ORDER BY s.scheduled_ms LIMIT ?""", (*args, limit)).fetchall()
+        return [dict(zip(self.EVENT_COLUMNS, r)) for r in rows]
+
+    def active_events(self, now_ms: int) -> list[dict]:
+        """Announced events that are upcoming or happened in the last 15 minutes, with trading state."""
+        events = self._events("s.scheduled_ms >= ?", (now_ms - 15 * 60_000,))
+        for ev in events:
+            if ev["phase"] is None:
+                ev["phase"] = "wait_buy" if ev["direction"] == "pump" else "wait_pre"
+                self.save_event_state(ev)
+        return events
+
+    def recent_events(self, limit: int = 50) -> list[dict]:
+        """Newest announced events first (for the UI)."""
+        rows = self._events("1", (), limit=10_000)
+        return list(reversed(rows))[:limit]
+
+    def save_event_state(self, ev: dict) -> None:
+        self.conn.execute(
+            """INSERT OR REPLACE INTO event_trades
+                   (occurrence_id, stock_id, direction, phase, start_price, extreme, info, updated_ms)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (ev["occurrence_id"], ev["stock_id"], ev["direction"], ev["phase"], ev.get("start_price"),
+             ev.get("extreme"), ev.get("info"), int(time.time() * 1000)))
+        self.conn.commit()
 
     def trades(self, stock_id: str, since_ms: int = 0, until_ms: int = 2 ** 62) -> list[dict]:
         """Trades derived from consecutive position changes.
