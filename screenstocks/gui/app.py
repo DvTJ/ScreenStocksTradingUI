@@ -11,7 +11,7 @@ from typing import Optional
 import threading
 import webbrowser
 
-from .. import __version__, config, settings as settings_mod, updater
+from .. import __version__, config, config_io, settings as settings_mod, updater
 from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, AutomationEngine, condition_met,
                           describe_trigger, has_position, kind_name, mode_name, needs_position, side_name,
                           trigger_price)
@@ -852,6 +852,53 @@ class NewsTab(ttk.Frame):
         self.sched_tree.set_rows(rows)
 
 
+class ExportDialog(tk.Toplevel):
+    """Pick what goes into the exported config: single rules and the event settings."""
+
+    def __init__(self, master, rules: list[dict], preselected: set):
+        super().__init__(master)
+        self.title(t("config.export_title"))
+        self.configure(bg=THEME["panel"])
+        self.transient(master.winfo_toplevel())
+        self.result: Optional[dict] = None
+        self.rule_vars = {r["id"]: tk.BooleanVar(value=r["id"] in preselected) for r in rules}
+        self.ev_var = tk.BooleanVar(value=False)
+
+        def check(text, var, **kw):
+            return tk.Checkbutton(self, text=text, variable=var, anchor="w", bg=THEME["panel"], fg=THEME["fg"],
+                                  selectcolor=THEME["panel_alt"], activebackground=THEME["panel"],
+                                  activeforeground=THEME["fg"], highlightthickness=0, bd=0, **kw)
+
+        ttk.Label(self, text=t("config.choose"), style="Section.TLabel").pack(anchor="w", padx=12, pady=(10, 4))
+        self.all_var = tk.BooleanVar(value=False)
+        check(t("config.select_all"), self.all_var, command=self._select_all).pack(fill="x", padx=12)
+        for r in rules:
+            label = f"#{r['id']}  {r['stock_id']}  {kind_name(r['kind'])}  " + describe_trigger(
+                r, None, fmt.price, fmt.decimal_sep())
+            check(label, self.rule_vars[r["id"]]).pack(fill="x", padx=18)
+        if not rules:
+            ttk.Label(self, text=t("config.no_rules"), style="CardMuted.TLabel").pack(anchor="w", padx=18)
+        check(t("config.with_events"), self.ev_var).pack(fill="x", padx=12, pady=(8, 0))
+        btns = ttk.Frame(self, style="Panel.TFrame")
+        btns.pack(fill="x", padx=12, pady=10)
+        ttk.Button(btns, text=t("setup.cancel"), command=self.destroy).pack(side="right")
+        ttk.Button(btns, text=t("config.export"), command=self._ok).pack(side="right", padx=(0, 6))
+        self.grab_set()
+        self.wait_window()
+
+    def _select_all(self) -> None:
+        for var in (*self.rule_vars.values(), self.ev_var):
+            var.set(self.all_var.get())
+
+    def _ok(self) -> None:
+        ids = {rid for rid, v in self.rule_vars.items() if v.get()}
+        if not (ids or self.ev_var.get()):
+            messagebox.showinfo(t("config.export_title"), t("config.nothing"), parent=self)
+            return
+        self.result = dict(rule_ids=ids, with_events=bool(self.ev_var.get()))
+        self.destroy()
+
+
 class AutomationTab(ttk.Frame):
     EVENT_COLUMNS = [
         ("when", "event.col_when", 130, "w"),
@@ -965,6 +1012,8 @@ class AutomationTab(ttk.Frame):
         bar = ttk.Frame(rules_frame, style="Panel.TFrame")
         bar.pack(fill="x", pady=(2, 2))
         ttk.Label(bar, text=t("auto.rules"), style="Section.TLabel").pack(side="left", padx=4)
+        ttk.Button(bar, text=t("config.import"), command=self._import_config).pack(side="right", padx=2)
+        ttk.Button(bar, text=t("config.export"), command=self._export_config).pack(side="right", padx=2)
         ttk.Button(bar, text=t("auto.delete"), command=self._delete).pack(side="right", padx=2)
         ttk.Button(bar, text=t("auto.toggle"), command=self._toggle_rule).pack(side="right", padx=2)
         ttk.Button(bar, text=t("auto.edit"), command=self._edit_rule).pack(side="right", padx=2)
@@ -1199,6 +1248,40 @@ class AutomationTab(ttk.Frame):
                 spin.bind("<Return>", lambda e: self._save_events())
         ttk.Label(card, text=t("event.help"), style="CardMuted.TLabel", wraplength=1300,
                   justify="left").pack(anchor="w", pady=(4, 0))
+
+    CONFIG_TYPES = [("JSON", "*.json")]
+
+    def _export_config(self) -> None:
+        chosen = {int(i) for i in self.rules_tree.selection()}
+        choice = ExportDialog(self, self.app.db.rules(), chosen).result
+        if choice is None:
+            return
+        path = filedialog.asksaveasfilename(parent=self, title=t("config.export_title"), defaultextension=".json",
+                                            filetypes=self.CONFIG_TYPES, initialfile="screenstocks-automation.json")
+        if not path:
+            return
+        try:
+            config_io.save_file(self.app.db, path, **choice)
+        except OSError as exc:
+            messagebox.showerror(t("config.export_title"), t("common.error", error=exc), parent=self)
+            return
+        messagebox.showinfo(t("config.export_title"), t("config.exported", path=path), parent=self)
+
+    def _import_config(self) -> None:
+        path = filedialog.askopenfilename(parent=self, title=t("config.import_title"), filetypes=self.CONFIG_TYPES)
+        if not path:
+            return
+        try:
+            added = config_io.load_file(self.app.db, path)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            messagebox.showerror(t("config.import_title"), t("config.invalid", error=exc), parent=self)
+            return
+        settings = load_event_settings(self.app.db)
+        for key, var in self.ev_vars.items():
+            v = getattr(settings, key)
+            var.set(v if isinstance(v, bool) else f"{v:g}")
+        self.app.refresh_now()
+        messagebox.showinfo(t("config.import_title"), t("config.imported", n=added), parent=self)
 
     def _save_events(self) -> None:
         """Store the switches and parameters; invalid numbers keep their previous value."""
