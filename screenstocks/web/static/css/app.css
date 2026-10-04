@@ -152,6 +152,8 @@ a { color: var(--accent); }
   background: var(--panel-2); border: 1px solid var(--line-2); border-left: 3px solid var(--accent);
   animation: pop .14s ease-out;
 }
+.toast { white-space: pre-line; }
+.toast-action { display: block; margin-top: 8px; }
 .toast.ok { border-left-color: var(--up); }
 .toast.err { border-left-color: var(--down); }
 .toast.warn { border-left-color: var(--warn); }
@@ -159,3 +161,4 @@ a { color: var(--accent); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #2a2e34; border-radius: 10px; border: 3px solid var(--panel); }
 ::-webkit-scrollbar-track { background: transparent; }
+.bot-log, .bot-log *, .toast { user-select: text; }

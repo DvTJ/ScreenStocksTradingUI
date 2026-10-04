@@ -129,9 +129,16 @@ def _show_web_fallback(reason: str) -> None:
     import tkinter as tk
     from tkinter import messagebox
     from screenstocks.i18n import t
-    from screenstocks.web import WEBVIEW2_DOWNLOAD
+    from screenstocks.web import WEBVIEW2_DOWNLOAD, install_webview2
     root = tk.Tk()
     root.withdraw()
+    if "WebView2" in reason and messagebox.askyesno(t("web.fallback_title"), t("web.webview2_ask"), parent=root):
+        error = install_webview2()
+        if not error:
+            root.destroy()
+            settings_mod.restart_app()           # start again, now with the web interface
+            sys.exit(0)
+        messagebox.showerror(t("web.fallback_title"), t("web.webview2_failed", error=error), parent=root)
     if messagebox.askyesno(t("web.fallback_title"), t("web.fallback_text", reason=reason), parent=root):
         import webbrowser
         webbrowser.open(WEBVIEW2_DOWNLOAD)

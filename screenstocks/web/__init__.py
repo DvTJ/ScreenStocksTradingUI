@@ -5,11 +5,16 @@ chosen in the settings and starts automatically when WebView2 is missing.
 """
 
 import os
+import subprocess
+import tempfile
+import urllib.request
 import winreg
 from pathlib import Path
 
 WEBVIEW2_CLIENT = r"Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 WEBVIEW2_DOWNLOAD = "https://developer.microsoft.com/microsoft-edge/webview2/"
+# Microsoft's official Evergreen bootstrapper (tiny; downloads and installs the runtime)
+WEBVIEW2_BOOTSTRAPPER = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 
 
 def webview2_version() -> str:
@@ -28,6 +33,20 @@ def webview2_version() -> str:
     base = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Microsoft" / "EdgeWebView" / "Application"
     versions = sorted(p.name for p in base.glob("*.*.*.*") if (p / "msedgewebview2.exe").exists()) if base.is_dir() else []
     return versions[-1] if versions else ""
+
+
+def install_webview2() -> str:
+    """Download Microsoft's WebView2 bootstrapper and run it silently (Windows may ask for permission).
+    Returns "" on success, else the error text."""
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "MicrosoftEdgeWebview2Setup.exe"
+            with urllib.request.urlopen(WEBVIEW2_BOOTSTRAPPER, timeout=60) as resp, open(exe, "wb") as fh:
+                fh.write(resp.read())
+            subprocess.run([str(exe), "/silent", "/install"], timeout=600, check=False)
+    except Exception as exc:
+        return str(exc)
+    return "" if webview2_version() else "installer finished but WebView2 is still not detected"
 
 
 def webview_available() -> tuple[bool, str]:

@@ -256,7 +256,7 @@ class AutomationApi:
                 config_io.save_file(self._db, path, rule_ids={int(i) for i in rule_ids}, with_events=bool(with_events))
         except OSError as exc:
             return {"error": t("common.error", error=exc)}
-        return {"message": t("config.exported", path=path)}
+        return {"message": t("config.exported", path=path), "path": path}
 
     def config_import(self) -> dict:
         result = self._window.create_file_dialog(webview.FileDialog.OPEN, file_types=("JSON (*.json)",))

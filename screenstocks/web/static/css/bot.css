@@ -1,0 +1,70 @@
+/* Bot tab */
+
+.bot { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: var(--gap); padding-right: 2px; }
+.bot > * { flex: none; }
+.bot-top { display: flex; align-items: center; gap: 16px; padding: 10px 16px; flex-wrap: wrap; }
+.bot-top .spacer { flex: 1; }
+.bot-top .lvl { display: flex; align-items: center; gap: 8px; }
+.bot-top .lvl select { width: auto; }
+.badge.neutral { background: rgba(139, 145, 154, .14); color: var(--fg); }
+.bot-top .badge { font-size: 13px; padding: 4px 12px; }
+
+/* levels: simple < medium < advanced */
+.bot[data-level="simple"] .only-medium { display: none !important; }
+.bot:not([data-level="advanced"]) .only-advanced { display: none !important; }
+
+.bset { display: flex; align-items: flex-end; gap: 16px 22px; flex-wrap: wrap; }
+.bset .field { width: 150px; }
+.bset .field.wide { width: 190px; }
+.bot .hint { color: var(--dim); font-size: 11.5px; margin-top: 8px; line-height: 1.5; }
+
+.bot-adv { margin-top: 12px; }
+.bot-adv summary { cursor: pointer; color: var(--muted); font-size: 12.5px; list-style: none; margin: 4px 0; }
+.bot-adv summary::before { content: "▸ "; }
+.bot-adv[open] summary::before { content: "▾ "; }
+.padv { display: grid; grid-template-columns: 230px 90px minmax(0, 1fr); gap: 8px 12px; align-items: center; margin: 8px 0; }
+.padv .tag { font-size: 11px; color: var(--dim); }
+.padv .tag.manual { color: var(--accent); }
+.info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-left: 4px;
+  border: 1px solid var(--line-2); border-radius: 50%; color: var(--muted); font: italic 600 10px/1 serif; cursor: help; vertical-align: middle; }
+.info:hover, .info:focus { color: var(--accent); border-color: var(--accent); outline: none; }
+.info::after { content: attr(data-tip); display: none; position: absolute; z-index: 20; left: 50%; top: 22px; transform: translateX(-30%);
+  width: 280px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 6px; color: var(--fg);
+  font: 400 12px/1.4 sans-serif; text-align: left; white-space: normal; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+.info:hover::after, .info:focus::after { display: block; }
+.padv label { color: var(--fg); font-size: 12.5px; }
+.stock-checks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 6px 0 10px; }
+.check { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-size: 12.5px; cursor: pointer; }
+
+.bot-note { color: var(--muted); font-size: 12.5px; margin: -2px 2px 0; }
+.bot-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--gap); min-height: 230px; }
+.bot-grid .box { min-height: 230px; max-height: 340px; }
+.bot-log { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.bot-log .item { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; padding: 4px 6px; border-radius: 6px; }
+.bot-log .item:nth-child(odd) { background: var(--bg); }
+.bot-grid .box.wide { grid-column: 1 / -1; }
+.bot-log .item.decision { color: var(--accent); font-weight: 600; }
+.bot-log .t { color: var(--dim); font-family: var(--mono); font-size: 11px; }
+
+.bot-test { display: flex; align-items: flex-end; gap: 12px 16px; flex-wrap: wrap; }
+.bot-test .field { width: 130px; }
+.bot-test .field.cap { width: 170px; }
+.bot-test-result { margin-top: 10px; color: var(--muted); font-size: 12.5px; line-height: 1.55; white-space: pre-line; }
+
+/* history test details dialog */
+.modal.wide { width: min(1000px, calc(100vw - 40px)); }
+.bot-detail { white-space: normal; }
+.bot-detail .row { display: flex; gap: 14px 22px; flex-wrap: wrap; margin: 6px 0; color: var(--fg); font-size: 12.5px; }
+.bot-detail .row .muted { margin-right: 4px; }
+.bot-detail .tbl-wrap { max-height: 46vh; margin-top: 10px; }
+.bot-detail .head { display: flex; justify-content: flex-end; }
+.box h2 .spacer { flex: 1; }
+.box h2 .btn { padding: 2px 10px; font-size: 12px; }
+.think-status { font-size: 12px; font-weight: 500; margin-left: 12px; }
+.think-status.alive { color: var(--up); }
+.think-status.stale { color: var(--warn); }
+.bot-log .item.link { cursor: pointer; color: var(--accent); }
+.bot-trades-bar { display: flex; margin: -4px 0 0; }
+.bot-trades-bar .spacer { flex: 1; }
+.bot-trades-bar { gap: 8px; }
+.btn.danger { color: var(--down); }
