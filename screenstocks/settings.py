@@ -78,6 +78,7 @@ class Settings:
     db_path: str = ""
     setup_done: bool = False
     check_updates: bool = True
+    ui: str = "web"                                    # "web" (default) or "classic" (Tkinter)
     stock_colors: dict = field(default_factory=dict)   # stock id -> "#rrggbb"
 
     @property

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ScreenStocks</title>
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/market.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/automation.css">
+  <link rel="stylesheet" href="css/analysis.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" class="logo" aria-hidden="true">
+        <rect x="1.5" y="11" width="3.6" height="8" rx="1" fill="#f85149"/>
+        <rect x="7.2" y="6" width="3.6" height="11" rx="1" fill="#3fb950"/>
+        <rect x="12.9" y="9" width="3.6" height="6" rx="1" fill="#f85149"/>
+        <rect x="18.6" y="3" width="3.6" height="10" rx="1" fill="#3fb950"/>
+      </svg>
+      <span>ScreenStocks</span>
+    </div>
+    <nav class="tabs" id="tabs" role="tablist"></nav>
+    <div class="kpis">
+      <div class="kpi state" id="kpi-state"><span class="dot"></span><span id="state-text">…</span></div>
+      <div class="kpi"><label data-t="common.net_worth"></label><b id="kpi-net">–</b></div>
+      <div class="kpi cash"><label data-t="common.cash"></label><b id="kpi-cash">–</b></div>
+      <div class="kpi narrow"><label data-t="common.level"></label><b id="kpi-level">–</b></div>
+      <div class="kpi cd"><label data-t="hdr.buy_cd"></label><b id="kpi-buy">–</b></div>
+      <div class="kpi cd"><label data-t="hdr.short_cd"></label><b id="kpi-short">–</b></div>
+      <button class="icon-btn" id="btn-settings" title="">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 1.7-1l2.4 1 2-3.4zM13 15.5A3.5 3.5 0 1 1 13 8.5a3.5 3.5 0 0 1 0 7z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="update-bar hidden" id="update-bar">
+    <span id="update-text"></span>
+    <div class="spacer"></div>
+    <button class="btn ghost" id="update-page" data-t="update.open_page"></button>
+    <button class="btn primary" id="update-install" data-t="update.install"></button>
+    <button class="btn ghost" id="update-later" data-t="update.later"></button>
+  </div>
+
+  <main id="views"></main>
+
+  <footer class="statusbar" id="statusbar"></footer>
+
+  <div class="modal-backdrop hidden" id="modal">
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3 id="modal-title"></h3>
+      <div id="modal-body"></div>
+      <div class="modal-actions" id="modal-actions"></div>
+    </div>
+  </div>
+  <div class="toasts" id="toasts"></div>
+
+  <script src="vendor/lightweight-charts.standalone.production.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/forms.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/tabs/market.js"></script>
+  <script src="js/tabs/compare.js"></script>
+  <script src="js/tabs/portfolio.js"></script>
+  <script src="js/tabs/dividends.js"></script>
+  <script src="js/tabs/journal.js"></script>
+  <script src="js/tabs/statistics.js"></script>
+  <script src="js/tabs/news.js"></script>
+  <script src="js/tabs/automation.js"></script>
+  <script src="js/shell.js"></script>
+</body>
+</html>

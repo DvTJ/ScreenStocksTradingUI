@@ -38,6 +38,7 @@ class SettingsDialog(tk.Toplevel):
         self.db_var = tk.StringVar(value=str(self.current.db_file))
         self.enable_mods_var = tk.BooleanVar(value=True)
         self.updates_var = tk.BooleanVar(value=self.current.check_updates)
+        self.ui_var = tk.StringVar(value=self.current.ui or "web")
         self.colors = dict(self.current.stock_colors)
 
         nb = ttk.Notebook(self)
@@ -68,6 +69,12 @@ class SettingsDialog(tk.Toplevel):
         row.pack(anchor="w", pady=(2, 12))
         for code, name in LANGUAGES.items():
             ttk.Radiobutton(row, text=name, value=code, variable=self.lang_var).pack(side="left", padx=(0, 16))
+
+        ttk.Label(f, text=t("settings.ui"), style="Section.TLabel").pack(anchor="w")
+        row = ttk.Frame(f, style="Panel.TFrame")
+        row.pack(anchor="w", pady=(2, 12))
+        for value, key in (("web", "web.ui_web"), ("classic", "web.ui_classic")):
+            ttk.Radiobutton(row, text=t(key), value=value, variable=self.ui_var).pack(side="left", padx=(0, 16))
 
         ttk.Label(f, text=t("setup.done.export"), style="Section.TLabel").pack(anchor="w")
         row = ttk.Frame(f, style="Panel.TFrame")
@@ -257,8 +264,9 @@ class SettingsDialog(tk.Toplevel):
                 messagebox.showwarning(t("settings.title"), t("setup.mods_write_failed", error=exc), parent=self)
         new = replace(self.current, language=self.lang_var.get(), export_dir=str(export_dir),
                       db_path=self.db_var.get(), check_updates=self.updates_var.get(),
-                      stock_colors=dict(self.colors))
+                      stock_colors=dict(self.colors), ui=self.ui_var.get())
         needs_restart = (new.language != (self.current.language or get_language())
+                         or new.ui != (self.current.ui or "web")
                          or Path(new.export_dir) != self.current.export_path
                          or Path(new.db_path) != self.current.db_file)
         settings_mod.save(new)

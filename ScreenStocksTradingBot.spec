@@ -42,8 +42,11 @@ with open(version_file, "w", encoding="utf-8") as fh:
 a = Analysis(
     ["main.py"],
     pathex=[],
-    datas=[("assets/icon.ico", "assets"), ("assets/icon.png", "assets")],
-    hiddenimports=[],
+    datas=[("assets/icon.ico", "assets"), ("assets/icon.png", "assets"),
+           ("screenstocks/web/static", "screenstocks/web/static")],
+    # the web UI is imported lazily in main.py; pywebview's own hook collects its .NET/WebView2 files
+    hiddenimports=["screenstocks.web.app", "screenstocks.web.bridge", "webview", "webview.platforms.edgechromium",
+                   "webview.platforms.winforms", "clr"],
     excludes=["unittest", "pydoc", "test"],
     noarchive=False,
 )
