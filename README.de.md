@@ -8,6 +8,10 @@ führt automatische Regeln wie Stop-Loss und Take-Profit aus.
 
 *Inoffizielles Fan-Projekt – nicht mit den Entwicklern von Screen Stocks verbunden.*
 
+Seit 2.0 hat die App eine neue Oberfläche (dunkles Design, TradingView-Charts). Die bisherige Oberfläche bleibt
+erhalten: umschalten unter **⚙ Einstellungen → Allgemein → Oberfläche**. Fehlt die Microsoft-Edge-WebView2-Laufzeit
+(bei Windows 10/11 dabei), startet automatisch die klassische Oberfläche und bietet den Download an.
+
 ## Funktionen
 
 - **Markt** – alle Aktien mit Kurs, Veränderung (1m/5m/15m/1h), Dividende, Verfügbarkeit, eigener Position
@@ -26,8 +30,9 @@ führt automatische Regeln wie Stop-Loss und Take-Profit aus.
   vorher und covert und kauft beim Anstieg vom Tief zurück. Alle Schwellen sind einstellbar.
 - **Konfig-Export / -Import** – im Automatik-Tab lassen sich gewählte Regeln und die Pump-/Crash-Einstellungen
   als JSON exportieren und wieder importieren (identische Regeln werden übersprungen).
-- **Chart-Zoom** – Rechteck aufziehen zoomt in Zeit und Kurs, mit der rechten Maustaste verschieben, Doppelklick
-  (oder „Zoom zurücksetzen“) setzt zurück; ein Ausschnitt bis „jetzt“ läuft mit. In allen Charts.
+- **Chart-Zoom** – Mausrad zoomt, Ziehen verschiebt, **Shift + Ziehen** zoomt auf ein Rechteck (Zeit und Kurs),
+  Doppelklick, **R** oder „Zoom zurücksetzen“ setzt zurück. In der klassischen Oberfläche: Rechteck aufziehen
+  zoomt, rechte Maustaste verschiebt.
 - **Vergleich** – alle Aktien normiert in % in einem Chart.
 - **Portfolio** – Nettovermögen und Bargeld im Verlauf, offene Positionen, Positionsänderungen.
 - **Dividenden** – der Export enthält nur den Dividendensatz; Auszahlungen werden daher an Bargeld-Anstiegen
@@ -42,8 +47,10 @@ führt automatische Regeln wie Stop-Loss und Take-Profit aus.
   jeden Zeitraum.
 - **Tab Statistik** – Volatilität pro Minute/Stunde, Min/Max/Spanne, Zeit über/unter dem Basispreis,
   Kreuzungen der Basis und Ø Kursbewegung 1/5/15 Minuten nach Hoch-/Tief-Meldungen.
-- **Einstellungen** (⚙) – Sprache, Ordner, Datenbank; feste Farbe je Aktie (änderbar); Datenpflege;
-  Update-Prüfung.
+- **Einstellungen** (⚙) – Sprache (sofort wirksam), Oberfläche, Ordner, Datenbank; feste Farbe je Aktie
+  (Palette oder freie Farbe); Datenpflege; Update-Prüfung; „Über“ mit den verwendeten Bibliotheken und Lizenzen.
+- **Tastatur** – **1–8** wechseln die Tabs, **Strg+,** öffnet die Einstellungen, **Esc** schließt Dialoge; im
+  Markt-Tab wählen **↑ / ↓** die vorherige / nächste Aktie, **R** setzt den Chart-Zoom zurück.
 - **Update-Prüfung** – bei jedem Start (abschaltbar); Hinweis mit Link zum Release, in der installierten App
   auf Wunsch Download und Start des neuen Installers.
 - **Verdichten** – Kurse und Portfolio-Snapshots älter als 7 Tage werden beim Start auf einen Wert pro
@@ -65,8 +72,8 @@ Beim ersten Start fragt ein kurzer Assistent:
    `mod-settings.json` des Spiels einschalten.
 3. **Datenbank** – Speicherort der Historie (Standard `%LOCALAPPDATA%\ScreenStocksTradingBot\screenstocks.db`)
 
-Über **⚙ Einstellungen** (oder den Startmenü-Eintrag „ScreenStocks Trading Bot – Setup“) lässt sich der
-Assistent jederzeit erneut öffnen. Die Einstellungen liegen in `%APPDATA%\ScreenStocksTradingBot\settings.json`;
+Alles lässt sich später unter **⚙ Einstellungen** ändern; den Assistenten selbst öffnet der Startmenü-Eintrag
+„ScreenStocks Trading Bot – Setup“ (oder `--setup`) erneut. Die Einstellungen liegen in `%APPDATA%\ScreenStocksTradingBot\settings.json`;
 bei der Deinstallation bleiben Einstellungen und Historie erhalten.
 
 > **Hinweis:** Handelsbefehle und Automatik-Regeln wirken über die Befehlsdateien des Mods im Spiel.
@@ -75,10 +82,13 @@ bei der Deinstallation bleiben Einstellungen und Historie erhalten.
 
 ## Aus dem Quellcode starten
 
-Benötigt Python 3.10+ (Windows, inkl. tkinter). Keine externen Pakete.
+Benötigt Python 3.10+ (Windows, inkl. tkinter). Die neue Oberfläche braucht `pywebview`;
+ohne startet die klassische Oberfläche.
 
 ```
+pip install -r requirements.txt
 python main.py              # Dashboard + Aufzeichnung
+python main.py --ui classic # klassische Oberfläche für einen Start
 python main.py --setup      # Einrichtungsassistent erneut starten
 python main.py --headless   # Aufzeichnung + Automatik ohne Fenster
 python main.py --lang de    # Sprache für einen Start überschreiben
@@ -104,3 +114,18 @@ iscc /DMyAppVersion=1.0.0 installer\ScreenStocksTradingBot.iss  # -> dist/instal
 git tag v1.0.0
 git push origin v1.0.0
 ```
+
+## Fremdsoftware
+
+| Komponente | Lizenz | Wofür |
+|---|---|---|
+| [pywebview](https://github.com/r0x0r/pywebview) | BSD-3-Clause | Fenster der neuen Oberfläche |
+| [pythonnet](https://github.com/pythonnet/pythonnet) | MIT | von pywebview genutzt, um WebView2 anzusprechen |
+| [TradingView Lightweight Charts™](https://github.com/tradingview/lightweight-charts) | Apache-2.0 | Charts (liegt in `screenstocks/web/static/vendor/`) |
+| Microsoft Edge WebView2 | Microsoft | stellt die Oberfläche dar (Teil von Windows) |
+
+Die Charts verwenden TradingView Lightweight Charts™, © TradingView, Inc. Das TradingView-Logo ist in den Charts
+ausgeblendet; stattdessen stehen der Hinweis und ein Link zu [tradingview.com](https://www.tradingview.com/) unter
+dem Markt-Chart und unter **⚙ Einstellungen → Über**.
+
+Dieses Projekt steht unter der Apache License 2.0.

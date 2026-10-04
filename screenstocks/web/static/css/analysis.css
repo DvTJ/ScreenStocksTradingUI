@@ -1,0 +1,33 @@
+/* Portfolio, Dividends and Journal tabs */
+
+.grow { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.grow > .tbl-wrap { flex: 1; }
+
+.pf { height: 100%; display: grid; grid-template-rows: auto auto minmax(200px, 1fr) minmax(220px, 1fr); gap: var(--gap); }
+.pf-chart { position: relative; padding: 8px; }
+.pf-chart.chart-box { padding: 0; }
+.pf-bottom { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, .8fr); gap: var(--gap); min-height: 0; }
+
+.div-tab { height: 100%; display: flex; flex-direction: column; gap: var(--gap); }
+.div-info .info { margin-bottom: 4px; }
+.div-info .note { color: var(--muted); font-size: 12px; }
+.div-tab > .grow { min-height: 0; }
+
+.jr { height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--gap); }
+.jr-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--gap); min-height: 0; }
+
+/* Compare, Statistics and News tabs */
+.cmp { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--gap); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--line-2); background: var(--panel); color: var(--c); cursor: pointer;
+}
+.chip i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+.chip.off { color: var(--dim); background: transparent; }
+.chip.off i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--dim); }
+
+.st { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap); }
+.st .box > .note, .nw .box > .note { color: var(--dim); font-size: 11.5px; margin: -4px 0 6px; }
+
+.nw { height: 100%; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--gap); }

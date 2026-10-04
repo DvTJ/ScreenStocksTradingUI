@@ -169,11 +169,12 @@ def command_result_key(r) -> str:
 
 
 class Storage:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, shared: bool = False):
+        """shared=True allows use from several threads (callers must serialise access with a lock)."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
-        self.conn = sqlite3.connect(str(path), timeout=10)
+        self.conn = sqlite3.connect(str(path), timeout=10, check_same_thread=not shared)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.executescript(SCHEMA)

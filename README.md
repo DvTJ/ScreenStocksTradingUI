@@ -8,6 +8,10 @@ automated rules such as stop-loss and take-profit.
 
 *Unofficial fan project – not affiliated with the developers of Screen Stocks.*
 
+Since 2.0 the app has a new interface (dark design, TradingView charts). The previous interface is still
+available: switch under **⚙ Settings → General → Interface**. If the Microsoft Edge WebView2 runtime is
+missing (it ships with Windows 10/11), the app starts the classic interface automatically and offers the download.
+
 ## Features
 
 - **Market** – all stocks with price, change (1m/5m/15m/1h), dividend, availability, your position and P/L;
@@ -25,8 +29,9 @@ automated rules such as stop-loss and take-profit.
   and buys back on the rebound from the low. All thresholds are adjustable.
 - **Config export / import** – the Automation tab can export chosen rules and the pump/crash settings to a JSON
   file and import them again (identical rules are skipped).
-- **Chart zoom** – drag a rectangle to zoom into time and price, drag with the right mouse button to pan, double-click
-  (or “Reset zoom”) to reset; a zoom that reaches the newest data follows live prices. Works in all charts.
+- **Chart zoom** – mouse wheel zooms, dragging pans, **Shift + drag** zooms into a rectangle (time and price),
+  double-click, **R** or “Reset zoom” resets. In the classic interface: drag a rectangle to zoom, right mouse
+  button to pan.
 - **Compare** – all stocks normalised to % change on one chart.
 - **Portfolio** – net worth and cash over time, open positions, position changes.
 - **Dividends** – the export only contains the dividend rate, so payouts are detected from cash increases
@@ -40,8 +45,10 @@ automated rules such as stop-loss and take-profit.
   average win/loss, best/worst trade, P/L per stock and dividends received – for any time range.
 - **Statistics tab** – volatility per minute/hour, min/max/spread, time above/below the base price,
   base crossings and the average price move 1/5/15 minutes after high/low market news.
-- **Settings dialog** (⚙) – language, folders, database; a fixed colour per stock (changeable);
-  data maintenance; update check.
+- **Settings** (⚙) – language (applied immediately), interface, folders, database; a fixed colour per stock
+  (palette or any colour); data maintenance; update check; About with the libraries and licences used.
+- **Keyboard** – **1–8** switch tabs, **Ctrl+,** opens the settings, **Esc** closes dialogs; in the market tab
+  **↑ / ↓** select the previous / next stock and **R** resets the chart zoom.
 - **Update check** – on every start (can be switched off); shows a notice with a link to the release and,
   in the installed app, downloads and starts the new installer on request.
 - **Data compaction** – prices and portfolio snapshots older than 7 days are thinned out to one value per
@@ -63,8 +70,8 @@ On first start a short setup wizard asks for:
    in the game's `mod-settings.json`.
 3. **Database** – where the history is stored (default `%LOCALAPPDATA%\ScreenStocksTradingBot\screenstocks.db`)
 
-You can reopen the wizard at any time via **⚙ Settings** (or the start-menu entry
-"ScreenStocks Trading Bot – Setup"). Settings live in `%APPDATA%\ScreenStocksTradingBot\settings.json`;
+Everything can be changed later under **⚙ Settings**; the wizard itself can be reopened via the start-menu
+entry "ScreenStocks Trading Bot – Setup" (or `--setup`). Settings live in `%APPDATA%\ScreenStocksTradingBot\settings.json`;
 uninstalling keeps your settings and history.
 
 > **Note:** trading commands and automation rules act in the game through the mod's command files.
@@ -73,10 +80,13 @@ uninstalling keeps your settings and history.
 
 ## Running from source
 
-Requires Python 3.10+ (Windows, tkinter included). No third-party packages.
+Requires Python 3.10+ (Windows, tkinter included). The new interface needs `pywebview`;
+without it the classic interface starts.
 
 ```
+pip install -r requirements.txt
 python main.py              # dashboard + recording
+python main.py --ui classic # classic interface for one run
 python main.py --setup      # run the setup wizard again
 python main.py --headless   # record + automation without a window
 python main.py --lang en    # override the UI language for one run
@@ -120,8 +130,24 @@ screenstocks/events.py      trading on announced pumps / crashes
 screenstocks/automation.py  rule engine (stop-loss, take-profit, trailing stop, limits)
 screenstocks/settings.py    user settings, paths, stock colours
 screenstocks/updater.py     update check and installer download (GitHub releases)
-screenstocks/i18n/            UI texts, one file per language (de, en, fr)
-screenstocks/gui/           tkinter dashboard, chart, setup wizard, theme
+screenstocks/i18n/           UI texts, one file per language (de, en, fr)
+screenstocks/web/           new interface: pywebview window, Python API for the page, static/ (HTML, CSS, JS)
+screenstocks/gui/           classic tkinter interface, chart, setup wizard, theme
 installer/                  Inno Setup script
 tools/make_icon.py          generates assets/icon.ico
 ```
+
+## Third-party software
+
+| Component | Licence | Used for |
+|---|---|---|
+| [pywebview](https://github.com/r0x0r/pywebview) | BSD-3-Clause | window of the new interface |
+| [pythonnet](https://github.com/pythonnet/pythonnet) | MIT | used by pywebview to reach WebView2 |
+| [TradingView Lightweight Charts™](https://github.com/tradingview/lightweight-charts) | Apache-2.0 | charts (bundled in `screenstocks/web/static/vendor/`) |
+| Microsoft Edge WebView2 | Microsoft | renders the interface (part of Windows) |
+
+The charts use TradingView Lightweight Charts™, © TradingView, Inc. The TradingView logo is hidden in the
+charts; the attribution with a link to [tradingview.com](https://www.tradingview.com/) is shown under the
+market chart and in **⚙ Settings → About** instead.
+
+This project is licensed under the Apache License 2.0.

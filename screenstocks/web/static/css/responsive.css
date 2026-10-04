@@ -1,0 +1,86 @@
+/* Smaller windows (minimum 900 x 600): denser header, narrower side columns, stacked layouts
+   that scroll instead of squeezing tables and charts. Loaded last. */
+
+.view { overflow: auto; }
+
+/* ---------------------------------------------------------------- header
+   shell.js adds tight-1..5 step by step until the header fits (text lengths differ per language) */
+.kpi label { white-space: nowrap; }
+.topbar.tight-1 .brand span { display: none; }
+.topbar.tight-1 { gap: 12px; }
+.topbar.tight-1 .kpi { min-width: 0; padding: 4px 10px; }
+.topbar.tight-2 .kpi.cd, .topbar.tight-2 .kpi.narrow { display: none; }   /* cooldowns stay in the market trade panel */
+.topbar.tight-3 #state-text { display: none; }                            /* dot only; the state is in its tooltip */
+.topbar.tight-3 .tabs button { padding: 6px 8px; font-size: 12px; }
+.topbar.tight-3 .kpis { gap: 6px; }
+.topbar.tight-4 .kpi.cash { display: none; }                               /* cash is in the trade panel and portfolio */
+.topbar.tight-5 .tabs button { padding: 6px 6px; font-size: 11.5px; }
+.topbar.tight-5 { gap: 8px; padding: 10px 10px; }
+
+/* ---------------------------------------------------------------- market */
+@media (max-width: 1400px) {
+  .market { grid-template-columns: 290px minmax(0, 1fr) 290px; }
+  .wrow { grid-template-columns: 4px minmax(0, 1fr) 92px; }
+  .wrow svg { display: none; }
+}
+@media (max-width: 1120px) {
+  .market { grid-template-columns: 220px minmax(0, 1fr) 268px; }
+  .wrow { grid-template-columns: 4px minmax(0, 1fr) 76px; gap: 8px; padding: 7px 8px; }
+  .wrow .px { font-size: 12.5px; }
+  .bigprice { font-size: 21px; margin-left: 4px; }
+  .ticker { font-size: 17px; }
+  .cpanel { padding: 12px 12px 8px; }
+  .tpanel { padding: 12px; gap: 10px; }
+  .watch .head { padding: 10px 10px 6px; }
+  .watch .head h2 { display: none; }                  /* room for the sort buttons */
+  .watch .head .seg { width: 100%; }
+  .watch .head .seg button { flex: 1; padding: 4px 4px; white-space: nowrap; }
+  .ctools { flex-wrap: wrap; }
+  .ctools .btn { white-space: nowrap; padding: 5px 10px; }
+}
+
+/* ---------------------------------------------------------------- portfolio / journal / statistics / news */
+@media (max-width: 1150px), (max-height: 760px) {
+  .pf { height: auto; min-height: 100%; grid-template-rows: auto auto 300px auto; }
+  .pf-bottom { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .pf-bottom > :first-child { grid-column: 1 / -1; }
+  .pf-bottom > section { height: 260px; }
+
+  .jr { height: auto; min-height: 100%; grid-template-rows: auto auto auto; }
+  .jr-grid > section { height: 360px; }
+
+  .st { height: auto; min-height: 100%; grid-template-rows: auto 330px 330px; }
+
+  .nw > section { height: max(360px, calc(100vh - 140px)); }
+}
+@media (max-width: 1000px) {
+  .jr-grid { grid-template-columns: minmax(0, 1fr); }
+  .nw { height: auto; grid-template-columns: minmax(0, 1fr); }
+  .nw > section { height: 380px; }
+}
+
+/* ---------------------------------------------------------------- automation */
+@media (max-width: 1300px) {
+  .auto { grid-template-columns: minmax(0, 1fr) 360px; }
+  .rform { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* narrow log column: message on its own line, full text */
+  .log-item { grid-template-columns: 120px 44px minmax(0, 1fr); row-gap: 1px; }
+  .log-item .msg { grid-column: 1 / -1; white-space: normal; }
+}
+@media (max-width: 1050px), (max-height: 700px) {
+  .auto { height: auto; min-height: 100%; grid-template-rows: auto auto; }
+  .rules-card { min-height: 280px; }
+  .log-card { height: 320px; flex: none; }
+}
+@media (max-width: 1050px) {
+  .auto { grid-template-columns: minmax(0, 1fr); }
+  .auto-top .hint { display: none; }
+}
+
+/* ---------------------------------------------------------------- dialogs */
+@media (max-width: 1000px), (max-height: 680px) {
+  .sheet { grid-template-columns: 150px minmax(0, 1fr); height: calc(100vh - 24px); width: calc(100vw - 24px); }
+  .path-row { flex-wrap: wrap; }
+  .path-row .in { flex-basis: 100%; }
+  .wizard { min-height: 0; padding: 20px 22px; }
+}

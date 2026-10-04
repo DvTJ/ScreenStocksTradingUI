@@ -7,8 +7,9 @@
 Strings live in one module per language (de.py, en.py, fr.py). Adding a
 language = add a file and a LANGUAGES entry; missing keys fall back to English.
 
-The language is chosen once at startup (set_language) and stays fixed for
-the session; switching it in the settings takes effect after a restart.
+The language is chosen at startup (set_language). The classic interface keeps it
+for the session (a change applies after a restart); the web interface switches it
+live and reloads its page with texts() of the new language.
 """
 
 import ctypes
@@ -37,6 +38,20 @@ def t(key: str, default: Optional[str] = None, **kwargs) -> str:
     if text is None:
         text = en.STRINGS.get(key, default if default is not None else key)
     return text.format(**kwargs) if kwargs else text
+
+
+def texts(lang: Optional[str] = None) -> dict:
+    """All texts of a language (default: the current one); missing keys come from English. For the web UI."""
+    return {**en.STRINGS, **_STRINGS.get(lang or _lang, {})}
+
+
+def variants(key: str) -> list[str]:
+    """The text of a key in every language (to recognise texts stored before they became translatable)."""
+    return [strings[key] for strings in _STRINGS.values() if key in strings]
+
+
+def keys() -> list[str]:
+    return list(en.STRINGS)
 
 
 def system_language() -> str:

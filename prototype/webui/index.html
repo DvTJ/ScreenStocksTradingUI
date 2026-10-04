@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ScreenStocks – Market</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" class="logo" aria-hidden="true">
+        <rect x="3" y="11" width="3.5" height="8" rx="1" fill="#f85149"/>
+        <rect x="8.5" y="6" width="3.5" height="11" rx="1" fill="#3fb950"/>
+        <rect x="14" y="9" width="3.5" height="6" rx="1" fill="#f85149"/>
+        <rect x="19.5" y="3" width="3.5" height="10" rx="1" fill="#3fb950"/>
+      </svg>
+      <span>ScreenStocks</span>
+    </div>
+    <nav class="tabs" id="tabs"></nav>
+    <div class="kpis">
+      <div class="kpi live" id="kpi-live"><span class="dot"></span><span id="live-text">LIVE</span></div>
+      <div class="kpi"><label data-t="net"></label><b id="kpi-net">–</b></div>
+      <div class="kpi"><label data-t="cash"></label><b id="kpi-cash">–</b></div>
+      <div class="kpi"><label data-t="level"></label><b id="kpi-level">–</b></div>
+      <div class="kpi"><label data-t="buyCd"></label><b id="kpi-buy">–</b></div>
+      <div class="kpi"><label data-t="shortCd"></label><b id="kpi-short">–</b></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel watchlist">
+      <div class="panel-head">
+        <h2 data-t="watchlist"></h2>
+        <div class="seg small" id="sort">
+          <button data-sort="d5" class="active">Δ 5m</button>
+          <button data-sort="pl" data-t="pl"></button>
+          <button data-sort="div" data-t="divShort"></button>
+        </div>
+      </div>
+      <div class="rows" id="rows"></div>
+    </section>
+
+    <section class="panel chart-panel">
+      <div class="chart-head">
+        <div class="title">
+          <span class="swatch" id="swatch"></span>
+          <div>
+            <div class="ticker" id="ticker">–</div>
+            <div class="sub" id="name"></div>
+          </div>
+          <div class="price-block">
+            <div class="price" id="price">–</div>
+            <div class="pill" id="change">–</div>
+          </div>
+        </div>
+        <div class="seg" id="ranges"></div>
+      </div>
+      <div class="event-banner hidden" id="event"></div>
+      <div class="chart-wrap">
+        <div class="legend" id="legend"></div>
+        <div id="chart"></div>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div class="foot">
+        <span class="hint" data-t="zoomHint"></span>
+        <!-- required attribution (NOTICE of TradingView Lightweight Charts, Apache-2.0) instead of the logo in the chart -->
+        <a class="attribution" href="https://www.tradingview.com/" id="attribution">Charts: TradingView Lightweight Charts™ · © TradingView, Inc. · tradingview.com</a>
+      </div>
+    </section>
+
+    <aside class="panel trade">
+      <h2><span data-t="trade"></span> <span id="trade-ticker"></span></h2>
+      <div class="facts">
+        <div><label data-t="price"></label><b id="t-price">–</b></div>
+        <div><label data-t="owned"></label><b id="t-owned">–</b></div>
+        <div><label data-t="avgBuy"></label><b id="t-avg">–</b></div>
+        <div><label data-t="short"></label><b id="t-short">–</b></div>
+        <div><label data-t="pl"></label><b id="t-pl">–</b></div>
+        <div><label data-t="divMin"></label><b id="t-div">–</b></div>
+      </div>
+      <div class="amount">
+        <div class="amount-head"><label data-t="amount"></label><b id="pct-label">25 %</b></div>
+        <input type="range" min="1" max="100" value="25" id="pct">
+        <div class="quick" id="quick"></div>
+      </div>
+      <div class="actions">
+        <button class="act buy" data-t="buy"></button>
+        <button class="act sell" data-t="sell"></button>
+        <button class="act short" data-t="shortAct"></button>
+        <button class="act cover" data-t="cover"></button>
+        <button class="act close wide" data-t="close"></button>
+      </div>
+      <p class="preview" id="preview"></p>
+      <div class="draft-note" data-t="draftNote"></div>
+    </aside>
+  </main>
+
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="vendor/lightweight-charts.standalone.production.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
