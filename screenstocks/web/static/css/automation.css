@@ -47,30 +47,8 @@ select.in { cursor: pointer; }
 .rhelp .warn { color: var(--warn); }
 .editing-tag { color: var(--accent); font-size: 12px; font-weight: 600; }
 
-/* rules table */
+/* rules table (generic .tbl styles: components.css) */
 .rules-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.tbl-wrap { overflow: auto; min-height: 0; }
-table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.tbl th {
-  position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; font-size: 11px;
-  text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line);
-}
-.tbl td { padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-.tbl td.r, .tbl th.r { text-align: right; }
-.tbl td.wrap { white-space: normal; color: var(--muted); }
-.tbl tr.off td { color: var(--dim); }
-.tbl tr.armed td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
-.tbl tr:hover td { background: var(--panel-2); }
-.tbl .mono { font-family: var(--mono); }
-.row-actions { display: flex; gap: 4px; justify-content: flex-end; }
-.ibtn {
-  width: 28px; height: 26px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--muted);
-  display: grid; place-items: center; font-size: 13px; padding: 0;
-}
-.ibtn:hover { color: var(--fg); border-color: var(--line-2); }
-.ibtn.on { color: var(--up); border-color: rgba(63, 185, 80, .4); }
-.ibtn.danger:hover { color: var(--down); border-color: rgba(248, 81, 73, .5); }
-.empty-row { color: var(--muted); padding: 18px 8px; text-align: center; }
 
 /* events */
 .ev-switches { display: flex; gap: 22px; margin-bottom: 8px; }

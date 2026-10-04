@@ -1,0 +1,71 @@
+/* Shared components: KPI cards, tables, range bar, chart frame */
+
+/* ---------------------------------------------------------------- KPI cards */
+.kpi-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.kcard {
+  flex: 1 1 140px; min-width: 130px; padding: 10px 14px; border-radius: var(--radius);
+  background: var(--panel); border: 1px solid var(--line);
+}
+.kcard label { display: block; margin-bottom: 2px; }
+.kcard .v { font-size: 19px; font-weight: 600; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kcard .v.up { color: var(--up); }
+.kcard .v.down { color: var(--down); }
+.kcard .sub { color: var(--muted); font-size: 11.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------------------------------------------------------------- tables */
+.tbl-wrap { overflow: auto; min-height: 0; }
+table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tbl th {
+  position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; font-size: 11px;
+  text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.tbl td { padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl td.r, .tbl th.r { text-align: right; }
+.tbl td.wrap { white-space: normal; color: var(--muted); }
+.tbl tr.off td { color: var(--dim); }
+.tbl tr.armed td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.tbl tr:hover td { background: var(--panel-2); }
+.tbl .mono { font-family: var(--mono); }
+.row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.ibtn {
+  width: 28px; height: 26px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--muted);
+  display: grid; place-items: center; font-size: 13px; padding: 0;
+}
+.ibtn:hover { color: var(--fg); border-color: var(--line-2); }
+.ibtn.on { color: var(--up); border-color: rgba(63, 185, 80, .4); }
+.ibtn.danger:hover { color: var(--down); border-color: rgba(248, 81, 73, .5); }
+.empty-row { color: var(--muted); padding: 18px 8px; text-align: center; }
+
+
+.tbl th.sortable { cursor: pointer; user-select: none; }
+.tbl th.sortable:hover { color: var(--fg); }
+.tbl th.sorted::after { content: " ▾"; color: var(--accent); }
+.tbl th.sorted.asc::after { content: " ▴"; }
+.tbl td.up { color: var(--up); }
+.tbl td.down { color: var(--down); }
+.tbl tr.up td:first-child { box-shadow: inset 3px 0 0 var(--up); }
+.tbl tr.down td:first-child { box-shadow: inset 3px 0 0 var(--down); }
+.tbl tr.muted td { color: var(--dim); }
+
+/* ---------------------------------------------------------------- generic panel with header */
+.box { display: flex; flex-direction: column; min-height: 0; padding: 12px 14px; }
+.box > h2 { margin: 0 0 8px; display: flex; align-items: center; gap: 10px; }
+.box > .tbl-wrap { flex: 1; }
+.toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.toolbar .note { color: var(--dim); font-size: 11.5px; }
+
+/* ---------------------------------------------------------------- chart frame */
+.chart-box { position: relative; min-height: 0; }
+.chart-box .lw { position: absolute; inset: 0; }
+.chart-box .legend {
+  position: absolute; left: 8px; top: 6px; z-index: 3; pointer-events: none; display: flex; gap: 14px;
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+}
+.chart-box .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.chart-box .legend b { color: var(--fg); }
+.chart-box .zoombox {
+  position: absolute; z-index: 4; pointer-events: none; border: 1.5px dashed var(--accent);
+  background: rgba(88, 166, 255, .08); border-radius: 2px;
+}
+.chart-box .reset-zoom { position: absolute; right: 80px; top: 6px; z-index: 5; padding: 3px 10px; font-size: 12px; }
+.chart-box .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }

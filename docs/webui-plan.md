@@ -43,7 +43,7 @@ screenstocks/gui/          klassische Tkinter-Oberfläche (bleibt)
 | 0 Fundament | ✔ erledigt |
 | 1 Markt | ✔ erledigt |
 | 2 Automatik | ✔ erledigt |
-| 3 Portfolio, Dividenden, Journal | offen |
+| 3 Portfolio, Dividenden, Journal | ✔ erledigt |
 | 4 Vergleich, Statistik, News | offen |
 | 5 Einstellungen, Assistent | offen |
 | 6 Feinschliff, Release 2.0.0 | offen |

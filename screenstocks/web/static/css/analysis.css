@@ -1,0 +1,17 @@
+/* Portfolio, Dividends and Journal tabs */
+
+.grow { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.grow > .tbl-wrap { flex: 1; }
+
+.pf { height: 100%; display: grid; grid-template-rows: auto auto minmax(200px, 1fr) minmax(220px, 1fr); gap: var(--gap); }
+.pf-chart { position: relative; padding: 8px; }
+.pf-chart.chart-box { padding: 0; }
+.pf-bottom { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, .8fr); gap: var(--gap); min-height: 0; }
+
+.div-tab { height: 100%; display: flex; flex-direction: column; gap: var(--gap); }
+.div-info .info { margin-bottom: 4px; }
+.div-info .note { color: var(--muted); font-size: 12px; }
+.div-tab > .grow { min-height: 0; }
+
+.jr { height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--gap); }
+.jr-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--gap); min-height: 0; }
