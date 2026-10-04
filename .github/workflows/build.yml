@@ -1,10 +1,13 @@
 name: Build
 
 # Push a tag like v1.0.0 to build the installer and publish a GitHub release.
-# "Run workflow" (manual) builds the same files and attaches them as workflow artifacts only.
+# Pushes to main, pull requests and "Run workflow" (manual) build the same files and
+# attach them as workflow artifacts only.
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -41,8 +44,23 @@ jobs:
             "__version__ = `"$env:VERSION`""
           )
 
-      - name: Install build tools
-        run: python -m pip install --upgrade pip pyinstaller
+      # The prebuilt PyInstaller bootloader from PyPI is shared by countless executables,
+      # including malware, so antivirus engines often flag it. Compiling it ourselves
+      # (MSVC from the runner image) gives a unique binary and far fewer false positives.
+      - name: Install PyInstaller with a self-compiled bootloader
+        shell: pwsh
+        env:
+          PYINSTALLER_VERSION: "6.22.3"
+        run: |
+          python -m pip install --upgrade pip wheel
+          $src = Join-Path $env:RUNNER_TEMP "pyinstaller"
+          git clone --depth 1 --branch "v$env:PYINSTALLER_VERSION" https://github.com/pyinstaller/pyinstaller.git $src
+          Push-Location (Join-Path $src "bootloader")
+          python ./waf all --target-arch=64bit
+          if ($LASTEXITCODE -ne 0) { throw "bootloader build failed" }
+          Pop-Location
+          python -m pip install $src
+          python -c "import PyInstaller, pathlib, hashlib; p = pathlib.Path(PyInstaller.__file__).parent / 'bootloader' / 'Windows-64bit-intel' / 'runw.exe'; print(PyInstaller.__version__, p, hashlib.sha256(p.read_bytes()).hexdigest())"
 
       - name: Build app (PyInstaller)
         run: pyinstaller --noconfirm ScreenStocksTradingBot.spec
