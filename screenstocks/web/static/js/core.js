@@ -62,7 +62,11 @@ SS.applyTexts = (root = document) => {
 
 // ------------------------------------------------------------------ formatting (mirrors gui/fmt.py)
 
-const locale = () => (SS.lang === "de" ? "de-DE" : "en-US");
+// German and French: decimal comma, day-first dates, "12 %" (same as gui/fmt.py); French groups with a space.
+SS.LANGS = { de: "de-DE", en: "en-US", fr: "fr-FR" };
+SS.locale = () => SS.LANGS[SS.lang] || "en-US";
+SS.commaLang = () => SS.lang === "de" || SS.lang === "fr";
+const locale = SS.locale;
 SS.fmt = {
   num(v, d = 2) {
     if (v === null || v === undefined || Number.isNaN(v)) return "–";
@@ -76,7 +80,7 @@ SS.fmt = {
   big(v) {
     if (v === null || v === undefined) return "–";
     const a = Math.abs(v);
-    const steps = SS.lang === "de"
+    const steps = SS.commaLang()                  // French uses the German abbreviations (as in gui/fmt.py)
       ? [[1e12, " Bio."], [1e9, " Mrd."], [1e6, " Mio."], [1e4, " Tsd."]]
       : [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e4, "K"]];
     for (const [lim, suffix] of steps) if (a >= lim) return SS.fmt.num(v / lim, 2) + suffix;
@@ -84,7 +88,7 @@ SS.fmt = {
   },
   pct(v, signed = true) {
     if (v === null || v === undefined) return "–";
-    return (signed && v > 0 ? "+" : "") + SS.fmt.num(v, 2) + (SS.lang === "de" ? " %" : "%");
+    return (signed && v > 0 ? "+" : "") + SS.fmt.num(v, 2) + (SS.commaLang() ? " %" : "%");
   },
   duration(sec) {
     sec = Math.round(Math.abs(sec));

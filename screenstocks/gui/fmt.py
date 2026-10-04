@@ -7,14 +7,16 @@ from ..i18n import get_language
 
 
 def _de() -> bool:
-    return get_language() == "de"
+    """Day-first dates, decimal comma and "12 %" spacing (German and French)."""
+    return get_language() in ("de", "fr")
 
 
 def _localize(s: str) -> str:
-    # 1,234,567.89 -> 1.234.567,89 for German
+    # 1,234,567.89 -> 1.234.567,89 for German, 1 234 567,89 for French
     if not _de():
         return s
-    return s.replace(",", "_").replace(".", ",").replace("_", ".")
+    group = " " if get_language() == "fr" else "."
+    return s.replace(",", "_").replace(".", ",").replace("_", group)
 
 
 def decimal_sep() -> str:
@@ -35,7 +37,7 @@ def price(v: Optional[float]) -> str:
 
 
 def big(v: Optional[float]) -> str:
-    """Compact money/share amounts: 6,34 Mrd. / 6.34B"""
+    """Compact money/share amounts: 6,34 Mrd. / 6,34 Md / 6.34B"""
     if v is None:
         return "–"
     a = abs(v)

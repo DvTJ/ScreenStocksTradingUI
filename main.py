@@ -38,7 +38,7 @@ def main() -> int:
     ap.add_argument("--db", type=Path, help="SQLite file for the history")
     ap.add_argument("--headless", action="store_true", help="record without a window")
     ap.add_argument("--setup", action="store_true", help="run the setup wizard")
-    ap.add_argument("--lang", choices=["de", "en"], help="UI language for this run")
+    ap.add_argument("--lang", choices=["de", "en", "fr"], help="UI language for this run")
     ap.add_argument("--ui", choices=["web", "classic"], help="user interface for this run (default: settings)")
     ap.add_argument("--debug-ui", action="store_true", help="web UI with developer tools")
     ap.add_argument("--version", action="version", version=f"ScreenStocks Trading Bot {__version__}")

@@ -124,7 +124,7 @@
       rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.08 } },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: true, rightOffset: 4, shiftVisibleRangeOnNewBar: true },
       crosshair: { mode: LW.CrosshairMode.Normal, vertLine: { color: "#3a3f46", labelBackgroundColor: "#2a2e34" }, horzLine: { color: "#3a3f46", labelBackgroundColor: "#2a2e34" } },
-      localization: { priceFormatter: fmt.price, locale: SS.lang === "de" ? "de-DE" : "en-US" },
+      localization: { priceFormatter: fmt.price, locale: SS.locale() },
     });
     S.series = S.chart.addSeries(LW.AreaSeries, { lineWidth: 2, priceLineVisible: true, lastValueVisible: true });
     S.markers = LW.createSeriesMarkers(S.series, []);

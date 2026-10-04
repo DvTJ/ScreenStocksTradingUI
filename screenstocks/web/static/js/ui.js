@@ -104,7 +104,7 @@
       rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.15, bottom: 0.08 } },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: true, rightOffset: 4 },
       crosshair: { mode: LW.CrosshairMode.Normal, vertLine: { color: "#3a3f46", labelBackgroundColor: "#2a2e34" }, horzLine: { color: "#3a3f46", labelBackgroundColor: "#2a2e34" } },
-      localization: { priceFormatter: priceFormat, locale: SS.lang === "de" ? "de-DE" : "en-US" },
+      localization: { priceFormatter: priceFormat, locale: SS.locale() },
     });
     let handles = {}, list = [];
     const hidden = new Set();

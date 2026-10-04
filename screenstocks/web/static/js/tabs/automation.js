@@ -43,7 +43,9 @@
           </section>
 
           <section class="panel card rules-card">
-            <h2>${esc(t("auto.rules"))}</h2>
+            <h2>${esc(t("auto.rules"))}<span class="spacer"></span>
+              <button class="btn ghost" data-role="cfg-export">${esc(t("config.export"))}</button>
+              <button class="btn ghost" data-role="cfg-import">${esc(t("config.import"))}</button></h2>
             <div class="tbl-wrap"><table class="tbl">
               <thead><tr>
                 <th>#</th><th>${esc(t("common.stock"))}</th><th>${esc(t("auto.type"))}</th><th>${esc(t("auto.side"))}</th>
@@ -85,6 +87,8 @@
       inp.addEventListener("change", onFormChange);
     });
     q('[data-role="save"]').onclick = saveRule;
+    q('[data-role="cfg-export"]').onclick = exportConfig;
+    q('[data-role="cfg-import"]').onclick = importConfig;
     q('[data-role="cancel"]').onclick = cancelEdit;
     q('[data-role="use-price"]').onclick = usePrice;
     q('[data-role="rules"]').onclick = onRuleAction;
@@ -92,7 +96,7 @@
 
   const f = (name) => q(`[data-f="${name}"]`);
   /** Number for an input field: no thousands separator, decimal comma in German. */
-  const plain = (v, digits = 4) => String(+(+v).toFixed(digits)).replace(".", SS.lang === "de" ? "," : ".");
+  const plain = (v, digits = 4) => String(+(+v).toFixed(digits)).replace(".", SS.commaLang() ? "," : ".");
 
   function fillSelect(sel, options, keep) {
     const cur = keep ?? sel.value;
@@ -253,6 +257,43 @@
     q('[data-role="log"]').innerHTML = log.map((x) => `
       <div class="log-item"><span class="t">${esc(fmt.clock(x.time, true))}</span><span class="rid">${x.rule ? "#" + x.rule : ""}</span>
         <b>${esc(x.stock || "")}</b><span class="msg" title="${esc(x.msg)}">${esc(x.msg)}</span></div>`).join("");
+  }
+
+  // ------------------------------------------------------------------ config export / import
+  async function exportConfig() {
+    const rules = (S.data && S.data.rules) || [];
+    const body = document.createElement("div");
+    body.className = "cfg-choose";
+    body.innerHTML = `<div>${esc(t("config.choose"))}</div>
+      <label class="check"><input type="checkbox" data-role="all"><b>${esc(t("config.select_all"))}</b></label>
+      ${rules.length ? rules.map((r) => `<label class="check sub"><input type="checkbox" data-rule="${r.id}">
+        #${r.id} <b>${esc(r.stock)}</b> ${esc(r.kind_text)} · ${esc(r.trigger_text)}</label>`).join("")
+        : `<div class="form-note sub">${esc(t("config.no_rules"))}</div>`}
+      <label class="check"><input type="checkbox" data-role="events">${esc(t("config.with_events"))}</label>`;
+    const boxes = () => [...body.querySelectorAll("[data-rule], [data-role=events]")];
+    body.querySelector("[data-role=all]").onchange = (e) => boxes().forEach((b) => { b.checked = e.target.checked; });
+    const ok = await SS.dialog({ title: t("config.export_title"), body, buttons: [
+      { label: t("setup.cancel"), value: false, kind: "ghost" }, { label: t("config.export"), value: true, kind: "primary" }] });
+    if (!ok) return;
+    const ids = [...body.querySelectorAll("[data-rule]:checked")].map((b) => +b.dataset.rule);
+    const withEvents = body.querySelector("[data-role=events]").checked;
+    if (!ids.length && !withEvents) { SS.toast(t("config.nothing"), "warn"); return; }
+    showResult(t("config.export_title"), await SS.call("config_export", ids, withEvents));
+  }
+
+  async function importConfig() {
+    const res = await SS.call("config_import");
+    if (!res.cancelled && !res.error) {
+      S.eventsInit = false;              // load the imported pump/crash parameters into the form
+      S.sigRules = "";
+      await refresh();
+    }
+    showResult(t("config.import_title"), res);
+  }
+
+  function showResult(title, res) {
+    if (!res || res.cancelled) return;
+    SS.dialog({ title, body: res.error || res.message, buttons: [{ label: "OK", value: true, kind: "primary" }] });
   }
 
   // ------------------------------------------------------------------ refresh

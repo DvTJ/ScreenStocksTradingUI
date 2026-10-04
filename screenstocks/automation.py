@@ -18,7 +18,7 @@ from . import config
 from .collector import Collector
 from .commands import CommandWriter, action_name, reason_text, status_text, ACTIONS
 from .events import EventTrader, load_settings as load_event_settings
-from .i18n import STRINGS, t
+from .i18n import keys as text_keys, t, variants
 from .storage import Storage
 
 log = logging.getLogger(__name__)
@@ -139,10 +139,10 @@ def status_display(raw: Optional[str]) -> str:
 def _status_patterns() -> list[tuple[str, re.Pattern]]:
     """Regexes for the German and English status texts, most specific (longest literal text) first."""
     out = []
-    for key, pair in STRINGS.items():
+    for key in text_keys():
         if not key.startswith("rule.st."):
             continue
-        for text in pair:
+        for text in variants(key):
             parts = re.split(r"\{(\w+)\}", text)
             rx = "".join(re.escape(p) if i % 2 == 0 else f"(?P<{p}>.+?)" for i, p in enumerate(parts))
             literal = sum(len(p) for p in parts[::2])
@@ -155,10 +155,10 @@ def migrate_status_texts(db: Storage) -> int:
     patterns, changed = _status_patterns(), 0
     # translated game codes back to the codes ("Kein Volumen verfügbar" -> "no-volume")
     codes = {"status": {}, "reason": {}}
-    for key, pair in STRINGS.items():
+    for key in text_keys():
         for name, prefix in (("status", "cmdstatus."), ("reason", "reason.")):
             if key.startswith(prefix):
-                for text in pair:
+                for text in variants(key):
                     codes[name][text] = key[len(prefix):]
     for rule in db.rules():
         raw = rule.get("status")

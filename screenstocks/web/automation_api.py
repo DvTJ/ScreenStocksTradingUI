@@ -8,6 +8,9 @@ import time
 from dataclasses import asdict, fields
 from typing import Optional
 
+import webview
+
+from .. import config_io
 from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, condition_met, describe_trigger,
                           has_position, kind_name, mode_name, needs_position, side_name, status_display,
                           status_msg, trigger_price)
@@ -236,3 +239,33 @@ class AutomationApi:
                                           f"{t('event.switch_' + k)}: "
                                           f"{t('auto.col_active') if getattr(new, k) else t('event.off')}")
         return asdict(new)
+
+    # ------------------------------------------------------- config export / import
+
+    def config_export(self, rule_ids: list, with_events: bool) -> dict:
+        """Chosen rules and/or the pump/crash settings to a JSON file (config_io, as in the classic tab)."""
+        result = self._window.create_file_dialog(webview.FileDialog.SAVE, save_filename="screenstocks-automation.json",
+                                                 file_types=("JSON (*.json)",))
+        if not result:
+            return {"cancelled": True}
+        path = str(result[0] if isinstance(result, (tuple, list)) else result)
+        if not path.lower().endswith(".json"):
+            path += ".json"
+        try:
+            with self._lock:
+                config_io.save_file(self._db, path, rule_ids={int(i) for i in rule_ids}, with_events=bool(with_events))
+        except OSError as exc:
+            return {"error": t("common.error", error=exc)}
+        return {"message": t("config.exported", path=path)}
+
+    def config_import(self) -> dict:
+        result = self._window.create_file_dialog(webview.FileDialog.OPEN, file_types=("JSON (*.json)",))
+        if not result:
+            return {"cancelled": True}
+        path = str(result[0] if isinstance(result, (tuple, list)) else result)
+        try:
+            with self._lock:
+                added = config_io.load_file(self._db, path)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            return {"error": t("config.invalid", error=exc)}
+        return {"message": t("config.imported", n=added)}

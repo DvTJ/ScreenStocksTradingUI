@@ -113,6 +113,16 @@
     };
   }
 
+  // ---------------------------------------------------------------- header fit
+  // Compact the header step by step until it fits; label lengths differ between languages.
+  // On resize it starts over; after each tick it only tightens further (values like cooldowns change
+  // width every second - loosening there would make the header jump).
+  function fitHeader(reset = true) {
+    const bar = document.querySelector(".topbar");
+    if (reset) bar.classList.remove("tight-1", "tight-2", "tight-3", "tight-4", "tight-5");
+    for (let i = 1; i <= 5 && bar.scrollWidth > bar.clientWidth; i += 1) bar.classList.add(`tight-${i}`);
+  }
+
   // ---------------------------------------------------------------- keyboard
   // 1-8 = tabs, Ctrl+, = settings; everything else goes to the active tab (e.g. arrows in the market).
   // Off while typing or while a dialog is open (Esc closes dialogs, handled by the dialogs themselves).
@@ -138,6 +148,7 @@
       const d = await SS.call("tick");
       lastTick = d;
       renderHeader(d);
+      fitHeader(false);
       renderStatus(d);
       renderUpdate(d.update);
       const m = modules[active];
@@ -151,15 +162,17 @@
   SS.ready().then(async () => {
     const info = await SS.call("init");
     SS.info = info;
-    SS.lang = info.lang === "de" ? "de" : "en";
+    SS.lang = SS.LANGS[info.lang] ? info.lang : "en";
     SS.texts = info.texts || {};
     document.documentElement.lang = SS.lang;
     SS.applyTexts();
     $("btn-settings").title = `${t("settings.title")} (${t("web.key_ctrl")}+,)`;
     document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", () => fitHeader());
     $("btn-settings").onclick = () => SS.openSettings();
     bindUpdate();
     buildTabs();
+    fitHeader();
     tick();
   });
 })();

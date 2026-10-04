@@ -51,7 +51,7 @@
   async function setLanguage(lang) {
     S.values.language = lang;
     SS.texts = await SS.call("wizard_language", lang);
-    SS.lang = lang === "de" ? "de" : "en";
+    SS.lang = SS.LANGS[lang] ? lang : "en";
     document.documentElement.lang = SS.lang;
     render();
   }
@@ -76,7 +76,7 @@
   SS.ready().then(async () => {
     const st = await SS.call("wizard_state");
     SS.texts = st.texts;
-    SS.lang = st.lang === "de" ? "de" : "en";
+    SS.lang = SS.LANGS[st.lang] ? st.lang : "en";
     SS.info = { version: st.version };
     document.documentElement.lang = SS.lang;
     S.languages = st.languages;

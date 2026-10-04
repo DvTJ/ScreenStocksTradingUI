@@ -16,7 +16,7 @@ from typing import Optional
 import webview
 
 from .. import __version__, config, settings as settings_mod
-from ..i18n import LANGUAGES, STRINGS, get_language, set_language
+from ..i18n import LANGUAGES, get_language, set_language, texts
 from ..storage import Storage
 
 log = logging.getLogger(__name__)
@@ -28,10 +28,6 @@ LIBRARIES = [
     ("TradingView Lightweight Charts™", None, "Apache-2.0", "https://github.com/tradingview/lightweight-charts"),
 ]
 CHARTS_VERSION = "5.2.1"     # vendored file in static/vendor
-
-
-def _texts(lang: str) -> dict:
-    return {key: (de if lang == "de" else en) for key, (de, en) in STRINGS.items()}
 
 
 def _dist_version(name: Optional[str]) -> Optional[str]:
@@ -173,13 +169,13 @@ class SettingsApi:
         s = settings_mod.load()
         lang = s.language or get_language()
         set_language(lang)
-        return {"lang": lang, "languages": LANGUAGES, "texts": _texts(lang), "export_dir": str(s.export_path),
+        return {"lang": lang, "languages": LANGUAGES, "texts": texts(lang), "export_dir": str(s.export_path),
                 "db_path": str(s.db_file), "first_run": not s.setup_done, "version": __version__}
 
     def wizard_language(self, lang: str) -> dict:
         if lang in LANGUAGES:
             set_language(lang)
-        return _texts(get_language())
+        return texts(get_language())
 
     def wizard_finish(self, values: dict) -> dict:
         """Save the wizard; the page shows a possible warning and then calls wizard_open."""

@@ -59,3 +59,8 @@ details.params[open] summary::before { content: "▾ "; }
 .log-item .t { color: var(--dim); font-family: var(--mono); font-size: 11px; }
 .log-item .rid { color: var(--muted); text-align: right; }
 .log-item .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* config export choice */
+.cfg-choose { display: flex; flex-direction: column; gap: 2px; white-space: normal; max-height: 60vh; overflow: auto; }
+.cfg-choose .check.sub, .cfg-choose .form-note.sub { margin-left: 22px; }
+.rules-card h2 .btn { padding: 4px 10px; font-size: 12px; font-weight: 600; }

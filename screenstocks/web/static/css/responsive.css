@@ -3,20 +3,19 @@
 
 .view { overflow: auto; }
 
-/* ---------------------------------------------------------------- header */
-@media (max-width: 1440px) {
-  .brand span { display: none; }
-  .topbar { gap: 12px; }
-  .kpi { min-width: 0; padding: 4px 10px; }
-}
-@media (max-width: 1280px) {
-  .kpi.cd, .kpi.narrow { display: none; }            /* cooldowns stay visible in the market trade panel */
-}
-@media (max-width: 1060px) {
-  #state-text { display: none; }                    /* dot only; the state is in its tooltip */
-  .tabs button { padding: 6px 8px; font-size: 12px; }
-  .kpis { gap: 6px; }
-}
+/* ---------------------------------------------------------------- header
+   shell.js adds tight-1..5 step by step until the header fits (text lengths differ per language) */
+.kpi label { white-space: nowrap; }
+.topbar.tight-1 .brand span { display: none; }
+.topbar.tight-1 { gap: 12px; }
+.topbar.tight-1 .kpi { min-width: 0; padding: 4px 10px; }
+.topbar.tight-2 .kpi.cd, .topbar.tight-2 .kpi.narrow { display: none; }   /* cooldowns stay in the market trade panel */
+.topbar.tight-3 #state-text { display: none; }                            /* dot only; the state is in its tooltip */
+.topbar.tight-3 .tabs button { padding: 6px 8px; font-size: 12px; }
+.topbar.tight-3 .kpis { gap: 6px; }
+.topbar.tight-4 .kpi.cash { display: none; }                               /* cash is in the trade panel and portfolio */
+.topbar.tight-5 .tabs button { padding: 6px 6px; font-size: 11.5px; }
+.topbar.tight-5 { gap: 8px; padding: 10px 10px; }
 
 /* ---------------------------------------------------------------- market */
 @media (max-width: 1400px) {

@@ -15,7 +15,7 @@ from typing import Optional
 from .. import __version__, config, settings as settings_mod, updater
 from ..automation import AutomationEngine
 from ..collector import Collector
-from ..i18n import STRINGS, get_language
+from ..i18n import get_language, texts
 from ..storage import Storage
 from .automation_api import AutomationApi
 from .market import MarketApi
@@ -89,11 +89,10 @@ class Bridge(MarketApi, AutomationApi, PortfolioApi, AnalysisApi, SettingsApi):
     def init(self) -> dict:
         """Everything the page needs once: language, texts, version, colours, settings."""
         lang = get_language()
-        texts = {key: (de if lang == "de" else en) for key, (de, en) in STRINGS.items()}
         if self._settings.check_updates and not self._update_checked:   # init runs again after a reload
             self._update_checked = True
             threading.Thread(target=self._check_updates, daemon=True).start()
-        return {"lang": lang, "texts": texts, "version": __version__, "colors": self._settings.stock_colors,
+        return {"lang": lang, "texts": texts(lang), "version": __version__, "colors": self._settings.stock_colors,
                 "frozen": settings_mod.is_frozen(), "ui": self._settings.ui,
                 "github": f"https://github.com/{config.GITHUB_REPO}"}
 
