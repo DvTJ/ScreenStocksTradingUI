@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import Callable
 
 import webview
 
@@ -23,11 +24,17 @@ def static_dir() -> Path:
     return bundled if bundled.is_dir() else STATIC
 
 
-def run(collector: Collector, engine: AutomationEngine, db_path: Path, export_dir: Path,
+def run(start_backend: Callable[[], tuple[Collector, AutomationEngine, Path, Path]], setup: bool = False,
         debug: bool = False) -> None:
-    bridge = Bridge(collector, engine, db_path, export_dir)
+    """start_backend starts recording + automation and returns (collector, engine, db_path, export_dir).
+    With setup=True the window first shows the setup wizard and starts the backend when it is finished."""
+    bridge = Bridge()
+    bridge._backend_factory = start_backend
+    if not setup:
+        bridge._start(*start_backend())
+    page = static_dir() / ("setup.html" if setup else "index.html")
     window = webview.create_window(
-        f"{t('app.title')}  v{__version__}", str(static_dir() / "index.html"), js_api=bridge,
+        f"{t('app.title')}  v{__version__}", str(page), js_api=bridge,
         width=1500, height=930, min_size=(1100, 700), background_color="#0f1012", text_select=False)
     bridge._attach(window)
     window.events.closed += bridge._shutdown

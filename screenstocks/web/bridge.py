@@ -9,8 +9,8 @@ import logging
 import threading
 import time
 import webbrowser
-from dataclasses import replace
 from pathlib import Path
+from typing import Optional
 
 from .. import __version__, config, settings as settings_mod, updater
 from ..automation import AutomationEngine
@@ -21,26 +21,36 @@ from .automation_api import AutomationApi
 from .market import MarketApi
 from .analysis_api import AnalysisApi
 from .portfolio_api import PortfolioApi
+from .settings_api import SettingsApi
 
 log = logging.getLogger(__name__)
 
-ALLOWED_LINKS = ("https://www.tradingview.com/", "https://github.com/", "https://developer.microsoft.com/")
+ALLOWED_LINKS = ("https://www.tradingview.com/", "https://github.com/", "https://developer.microsoft.com/",
+                 "https://www.apache.org/", "https://www.python.org/")
 
 
-class Bridge(MarketApi, AutomationApi, PortfolioApi, AnalysisApi):
-    def __init__(self, collector: Collector, engine: AutomationEngine, db_path: Path, export_dir: Path):
-        self._collector = collector
-        self._engine = engine
-        self._export_dir = export_dir
-        self._db = Storage(db_path, shared=True)
+class Bridge(MarketApi, AutomationApi, PortfolioApi, AnalysisApi, SettingsApi):
+    def __init__(self, collector: Optional[Collector] = None, engine: Optional[AutomationEngine] = None,
+                 db_path: Optional[Path] = None, export_dir: Optional[Path] = None):
+        self._collector = self._engine = self._db = self._slow_db = self._export_dir = None
         self._lock = threading.Lock()
-        # second connection for slow read-only calculations (statistics), so they never block the 1 s tick
-        self._slow_db = Storage(db_path, shared=True)
         self._slow_lock = threading.Lock()
         self._settings = settings_mod.load()
         self._window = None
         self._update: dict = {}            # latest release info + download progress for the UI
+        self._update_checked = False
         self._closing = False
+        self._backend_factory = None       # set by app.run when the setup wizard runs first
+        if collector is not None:
+            self._start(collector, engine, db_path, export_dir)
+
+    def _start(self, collector: Collector, engine: AutomationEngine, db_path: Path, export_dir: Path) -> None:
+        self._collector = collector
+        self._engine = engine
+        self._export_dir = export_dir
+        self._db = Storage(db_path, shared=True)
+        # second connection for slow read-only calculations (statistics), so they never block the 1 s tick
+        self._slow_db = Storage(db_path, shared=True)
 
     # ---------------------------------------------------------------- lifecycle
 
@@ -51,12 +61,24 @@ class Bridge(MarketApi, AutomationApi, PortfolioApi, AnalysisApi):
         if self._closing:
             return
         self._closing = True        # page calls arriving from now on get empty answers
+        if self._collector is None:  # window closed during the setup wizard
+            return
         self._engine.stop()
         self._collector.stop()
         with self._lock:
             self._db.close()
         with self._slow_lock:
             self._slow_db.close()
+
+    def _open_app(self) -> None:
+        """After the setup wizard: start the backend and load the app page into the same window."""
+        from .app import static_dir
+        if self._collector is None:
+            self._start(*self._backend_factory())
+        self._settings = settings_mod.load()
+        url = (static_dir() / "index.html").as_uri()
+        # navigate only after this call has returned its result to the wizard page
+        threading.Timer(0.2, lambda: self._window.load_url(url)).start()
 
     def _close_window(self) -> None:
         if self._window is not None:
@@ -68,7 +90,8 @@ class Bridge(MarketApi, AutomationApi, PortfolioApi, AnalysisApi):
         """Everything the page needs once: language, texts, version, colours, settings."""
         lang = get_language()
         texts = {key: (de if lang == "de" else en) for key, (de, en) in STRINGS.items()}
-        if self._settings.check_updates:
+        if self._settings.check_updates and not self._update_checked:   # init runs again after a reload
+            self._update_checked = True
             threading.Thread(target=self._check_updates, daemon=True).start()
         return {"lang": lang, "texts": texts, "version": __version__, "colors": self._settings.stock_colors,
                 "frozen": settings_mod.is_frozen(), "ui": self._settings.ui,
@@ -152,13 +175,6 @@ class Bridge(MarketApi, AutomationApi, PortfolioApi, AnalysisApi):
         threading.Thread(target=work, daemon=True).start()
 
     # ------------------------------------------------------------------ settings
-
-    def set_ui(self, mode: str) -> None:
-        """Switch between web and classic interface (takes effect after a restart)."""
-        if mode not in ("web", "classic"):
-            return
-        self._settings = replace(settings_mod.load(), ui=mode)
-        settings_mod.save(self._settings)
 
     def restart(self) -> None:
         self._shutdown()

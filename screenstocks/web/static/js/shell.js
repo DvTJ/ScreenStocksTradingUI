@@ -111,29 +111,6 @@
     };
   }
 
-  // ---------------------------------------------------------------- settings (phase 0: interface choice)
-  async function openSettings() {
-    const body = document.createElement("div");
-    body.innerHTML = `
-      <div>${SS.esc(t("web.settings_intro"))}</div>
-      <div class="choice">
-        <label><input type="radio" name="ui" value="web"> <b>${SS.esc(t("web.ui_web"))}</b><small>${SS.esc(t("web.ui_web_desc"))}</small></label>
-        <label><input type="radio" name="ui" value="classic"> <b>${SS.esc(t("web.ui_classic"))}</b><small>${SS.esc(t("web.ui_classic_desc"))}</small></label>
-      </div>
-      <div class="muted">${SS.esc(t("web.settings_more"))}</div>`;
-    body.querySelector(`input[value="${SS.info.ui || "web"}"]`).checked = true;
-    const ok = await SS.dialog({
-      title: t("settings.title"), body,
-      buttons: [{ label: t("setup.cancel"), value: false, kind: "ghost" }, { label: t("settings.save"), value: true, kind: "primary" }],
-    });
-    if (!ok) return;
-    const mode = body.querySelector("input[name=ui]:checked").value;
-    if (mode === SS.info.ui) return;
-    await SS.call("set_ui", mode);
-    SS.info.ui = mode;
-    if (await SS.confirm(t("settings.title"), t("setup.restart"), t("web.restart_now"))) SS.call("restart");
-  }
-
   // ---------------------------------------------------------------- loop
   async function tick() {
     try {
@@ -158,7 +135,7 @@
     document.documentElement.lang = SS.lang;
     SS.applyTexts();
     $("btn-settings").title = t("settings.title");
-    $("btn-settings").onclick = openSettings;
+    $("btn-settings").onclick = () => SS.openSettings();
     bindUpdate();
     buildTabs();
     tick();

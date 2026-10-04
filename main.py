@@ -50,27 +50,57 @@ def main() -> int:
     settings = settings_mod.load()
     set_language(args.lang or settings.language or system_language())
 
-    if not args.headless and (args.setup or not settings.setup_done):
+    need_setup = not args.headless and (args.setup or not settings.setup_done)
+    ui = args.ui or settings.ui
+    web_ok, web_reason = False, ""
+    if not args.headless and ui == "web":
+        from screenstocks.web import webview_available
+        web_ok, web_reason = webview_available()
+
+    backend: dict = {}
+
+    def start_backend():
+        """Starts recording + automation once (after the setup wizard, if it runs)."""
+        if not backend:
+            current = settings_mod.load()
+            export_dir = args.export_dir or current.export_path
+            db_path = args.db or current.db_file
+            log.info("ScreenStocks Trading Bot %s – export: %s, db: %s", __version__, export_dir, db_path)
+            if not export_dir.is_dir():
+                log.warning("export folder does not exist (yet): %s – waiting for it", export_dir)
+            collector = Collector(export_dir, db_path)
+            collector.start()
+            # Stop-loss / take-profit / ... rules run in the background, also in headless mode.
+            engine = AutomationEngine(collector, db_path, CommandWriter(export_dir.parent))
+            engine.start()
+            backend.update(collector=collector, engine=engine, db_path=db_path, export_dir=export_dir)
+        return backend["collector"], backend["engine"], backend["db_path"], backend["export_dir"]
+
+    if web_ok:
+        try:
+            # the web UI shows the setup wizard itself and starts the backend when it is finished
+            from screenstocks.web.app import run as run_web
+            run_web(start_backend, setup=need_setup, debug=args.debug_ui)
+            if backend:
+                backend["collector"].join(timeout=2)
+            return 0
+        except Exception as exc:  # e.g. WebView2 failed to start
+            web_reason = f"{type(exc).__name__}: {exc}"
+            log.exception("web UI failed, falling back to the classic interface")
+            if backend:                          # the wizard was finished in the web UI
+                need_setup = False
+    if ui == "web" and not args.headless:
+        log.warning("web UI not available (%s) - starting the classic interface", web_reason)
+        _show_web_fallback(web_reason)
+
+    if need_setup:
         from screenstocks.gui.setup import run_setup
-        result = run_setup(settings)
-        if result is None:
-            if not settings.setup_done:
-                return 0  # wizard cancelled on first start
-        else:
-            settings = result
-        set_language(args.lang or settings.language or system_language())
+        result = run_setup(settings_mod.load())
+        if result is None and not settings_mod.load().setup_done:
+            return 0  # wizard cancelled on first start
+        set_language(args.lang or settings_mod.load().language or system_language())
 
-    export_dir = args.export_dir or settings.export_path
-    db_path = args.db or settings.db_file
-    log.info("ScreenStocks Trading Bot %s – export: %s, db: %s", __version__, export_dir, db_path)
-    if not export_dir.is_dir():
-        log.warning("export folder does not exist (yet): %s – waiting for it", export_dir)
-
-    collector = Collector(export_dir, db_path)
-    collector.start()
-    # Stop-loss / take-profit / ... rules run in the background, also in headless mode.
-    engine = AutomationEngine(collector, db_path, CommandWriter(export_dir.parent))
-    engine.start()
+    collector, engine, db_path, export_dir = start_backend()
 
     if args.headless:
         log.info("recording %s -> %s (Ctrl+C to stop)", export_dir, db_path)
@@ -87,22 +117,6 @@ def main() -> int:
         collector.stop()
         collector.join(timeout=2)
         return 0
-
-    ui = args.ui or settings.ui
-    if ui == "web":
-        from screenstocks.web import webview_available
-        ok, reason = webview_available()
-        if ok:
-            try:
-                from screenstocks.web.app import run as run_web
-                run_web(collector, engine, db_path, export_dir, debug=args.debug_ui)
-                collector.join(timeout=2)
-                return 0
-            except Exception as exc:  # e.g. WebView2 failed to start
-                reason = f"{type(exc).__name__}: {exc}"
-                log.exception("web UI failed, falling back to the classic interface")
-        log.warning("web UI not available (%s) - starting the classic interface", reason)
-        _show_web_fallback(reason)
 
     from screenstocks.gui.app import run
     run(collector, engine, db_path, export_dir)

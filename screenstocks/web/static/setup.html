@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ScreenStocks – Setup</title>
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/settings.css">
+</head>
+<body>
+  <main class="wizard-page">
+    <div class="wizard">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="1.5" y="11" width="3.6" height="8" rx="1" fill="#f85149"/>
+          <rect x="7.2" y="6" width="3.6" height="11" rx="1" fill="#3fb950"/>
+          <rect x="12.9" y="9" width="3.6" height="6" rx="1" fill="#f85149"/>
+          <rect x="18.6" y="3" width="3.6" height="10" rx="1" fill="#3fb950"/>
+        </svg>
+        <span>ScreenStocks Trading Bot</span>
+        <div class="steps" id="steps"></div>
+      </div>
+      <div class="wizard-body" id="wizard-body"></div>
+      <div class="wizard-nav">
+        <span class="step-label" id="step-label"></span>
+        <button class="btn ghost" id="btn-cancel"></button>
+        <button class="btn" id="btn-back"></button>
+        <button class="btn primary" id="btn-next"></button>
+      </div>
+    </div>
+  </main>
+
+  <div class="modal-backdrop hidden" id="modal">
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3 id="modal-title"></h3>
+      <div id="modal-body"></div>
+      <div class="modal-actions" id="modal-actions"></div>
+    </div>
+  </div>
+  <div class="toasts" id="toasts"></div>
+
+  <script src="js/core.js"></script>
+  <script src="js/forms.js"></script>
+  <script src="js/setup.js"></script>
+</body>
+</html>

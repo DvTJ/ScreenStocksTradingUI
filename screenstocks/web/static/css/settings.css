@@ -1,0 +1,100 @@
+/* Settings dialog and setup wizard */
+
+/* ---------------------------------------------------------------- shared form pieces */
+.form-section { margin-bottom: 18px; }
+.form-section > h4 { margin: 0 0 6px; font-size: 12.5px; font-weight: 600; color: var(--fg); }
+.path-row { display: flex; gap: 6px; }
+.path-row .in { flex: 1; font-family: var(--mono); font-size: 12px; }
+.path-row .btn { white-space: nowrap; }
+.checks { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.checks .ok { color: var(--up); }
+.checks .bad { color: var(--down); }
+.checks .warn { color: var(--warn); }
+.check { display: flex; align-items: flex-start; gap: 8px; color: var(--fg); font-size: 12.5px; cursor: pointer; margin-top: 6px; }
+.check input { accent-color: var(--accent); margin: 2px 0 0; }
+.radios { display: flex; gap: 10px; flex-wrap: wrap; }
+.radios label {
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--line-2); background: var(--bg); color: var(--fg); font-size: 13px;
+}
+.radios label small { color: var(--muted); font-size: 11.5px; }
+.radios input { accent-color: var(--accent); margin: 0; }
+.radios label:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.radios.stack { flex-direction: column; align-items: stretch; }
+.form-note { color: var(--muted); font-size: 12px; line-height: 1.55; }
+.form-note.warn { color: var(--warn); }
+.text { color: var(--muted); line-height: 1.6; margin: 0 0 14px; }
+
+/* ---------------------------------------------------------------- settings sheet */
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
+  background: rgba(5, 6, 8, .62); backdrop-filter: blur(2px); animation: fade .12s ease-out;
+}
+.sheet {
+  width: min(860px, calc(100vw - 40px)); height: min(620px, calc(100vh - 40px)); display: grid;
+  grid-template-columns: 190px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: var(--shadow);
+  animation: pop .14s ease-out; overflow: hidden;
+}
+.sheet-head { grid-column: 1 / -1; padding: 14px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; }
+.sheet-head h3 { margin: 0; font-size: 15px; }
+.sheet-nav { padding: 10px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; background: #141619; }
+.sheet-nav button {
+  border: 0; background: transparent; color: var(--muted); text-align: left; padding: 8px 12px; border-radius: 8px; font-size: 13px;
+}
+.sheet-nav button:hover { color: var(--fg); }
+.sheet-nav button.active { background: var(--panel-3); color: var(--fg); box-shadow: inset 0 0 0 1px var(--line-2); }
+.sheet-body { padding: 18px 22px; overflow: auto; }
+.sheet-page { display: none; }
+.sheet-page.active { display: block; }
+.sheet-foot {
+  grid-column: 1 / -1; padding: 12px 20px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 8px;
+}
+.sheet-foot .form-note { flex: 1; }
+
+/* colours */
+.color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.color-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line-2);
+  background: var(--bg); color: var(--fg); font-weight: 600; text-align: left;
+}
+.color-item:hover { border-color: var(--muted); }
+.color-item .sw { width: 22px; height: 22px; border-radius: 6px; flex: none; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); }
+.color-item .hex { margin-left: auto; color: var(--dim); font: 11px var(--mono); }
+.color-pop {
+  position: fixed; z-index: 45; padding: 10px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line-2);
+  box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; width: 250px;
+}
+.color-pop .swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.color-pop .swatches button { height: 26px; border-radius: 6px; border: 2px solid transparent; padding: 0; }
+.color-pop .swatches button.sel { border-color: #fff; }
+.color-pop .row { display: flex; gap: 6px; }
+.color-pop .row .btn { flex: 1; padding: 5px 8px; font-size: 12px; white-space: nowrap; }
+.color-pop input[type=color] { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; }
+
+/* data + about */
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; font-size: 12.5px; margin-bottom: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; color: var(--fg); overflow-wrap: anywhere; }
+.status-line { margin-top: 10px; font-size: 12.5px; min-height: 18px; }
+.about-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.about-head svg { width: 34px; height: 34px; }
+.about-head h4 { margin: 0; font-size: 16px; }
+.link { color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.notice { margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.55; }
+
+/* ---------------------------------------------------------------- setup wizard page */
+.wizard-page { flex: 1; display: grid; place-items: center; padding: 20px; overflow: auto; }
+.wizard {
+  width: min(720px, 100%); min-height: 480px; display: flex; flex-direction: column; padding: 26px 30px;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 16px; box-shadow: var(--shadow);
+}
+.wizard .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; margin-bottom: 18px; }
+.wizard .brand svg { width: 26px; height: 26px; }
+.wizard .steps { display: flex; gap: 6px; margin-left: auto; }
+.wizard .steps i { width: 26px; height: 4px; border-radius: 4px; background: var(--line-2); }
+.wizard .steps i.on { background: var(--accent); }
+.wizard h2 { margin: 0 0 6px; font-size: 22px; }
+.wizard-body { flex: 1; }
+.wizard-nav { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
+.wizard-nav .step-label { color: var(--muted); font-size: 12px; flex: 1; }

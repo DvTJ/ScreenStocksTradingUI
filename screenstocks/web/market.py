@@ -237,7 +237,7 @@ class MarketApi:
         secs = RANGES.get(range_key)
         since = first if secs is None else max(first, end - secs * 1000)
         name = f"screenstocks_{range_key}_{datetime.now():%Y%m%d_%H%M%S}.csv"
-        result = self._window.create_file_dialog(webview.SAVE_DIALOG, save_filename=name,
+        result = self._window.create_file_dialog(webview.FileDialog.SAVE, save_filename=name,
                                                  file_types=("CSV (*.csv)",))
         if not result:
             return {"ok": False, "text": ""}

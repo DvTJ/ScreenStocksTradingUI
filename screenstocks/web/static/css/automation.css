@@ -15,32 +15,10 @@
 .card h2 { margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
 .card h2 .spacer { flex: 1; }
 
-/* toggle switch */
-.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 600; }
-.switch input { display: none; }
-.switch .track {
-  position: relative; width: 38px; height: 22px; border-radius: 999px; background: var(--line-2); transition: background .15s;
-}
-.switch .track::after {
-  content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #d0d4da;
-  transition: transform .15s;
-}
-.switch input:checked + .track { background: var(--up); }
-.switch input:checked + .track::after { transform: translateX(16px); background: #fff; }
-.switch.big { font-size: 15px; }
-
 /* rule form */
 .rform { display: grid; grid-template-columns: 110px 150px 100px minmax(170px, 1fr) 90px 110px; gap: 10px 12px; align-items: end; }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field .pair { display: flex; gap: 6px; }
-.in {
-  width: 100%; min-width: 0; background: var(--bg); color: var(--fg); border: 1px solid var(--line-2); border-radius: 7px;
-  padding: 6px 8px; font: 13px var(--font);
-}
-.in:focus { outline: none; border-color: var(--accent); }
-.in:disabled { color: var(--dim); }
-select.in { cursor: pointer; }
-.in.num { font-family: var(--mono); text-align: right; }
 .rform-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .rform-actions .spacer { flex: 1; }
 .rhelp { margin-top: 10px; color: var(--muted); font-size: 12px; line-height: 1.55; }

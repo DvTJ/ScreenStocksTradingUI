@@ -387,15 +387,10 @@ STRINGS: dict[str, tuple[str, str]] = {
     "web.source": ("Quelle", "Source"),
     "web.game": ("Spielversion", "game version"),
     "web.installing": ("Installer wird gestartet …", "Starting installer …"),
-    "web.settings_intro": ("Welche Oberfläche soll die App verwenden?", "Which interface should the app use?"),
     "web.ui_web": ("Neue Oberfläche", "New interface"),
     "web.ui_web_desc": ("Modernes Design mit TradingView-Charts", "Modern design with TradingView charts"),
     "web.ui_classic": ("Klassische Oberfläche", "Classic interface"),
     "web.ui_classic_desc": ("Die bisherige Oberfläche (Tkinter)", "The previous interface (Tkinter)"),
-    "web.settings_more": ("Alle weiteren Einstellungen folgen in Phase 5 der neuen Oberfläche – bis dahin in der "
-                          "klassischen Oberfläche.",
-                          "All other settings follow in phase 5 of the new interface – until then in the classic "
-                          "interface."),
     "web.restart_now": ("Jetzt neu starten", "Restart now"),
     "web.zoom_hint": ("Mausrad = Zoom · Ziehen = verschieben · Shift + Ziehen = Bereich zoomen · Doppelklick = zurücksetzen",
                       "Mouse wheel = zoom · drag = pan · Shift + drag = zoom to area · double-click = reset"),
@@ -417,6 +412,41 @@ STRINGS: dict[str, tuple[str, str]] = {
                           "The new interface cannot start on this PC, so the classic one opens instead.\n\n"
                           "Reason: {reason}\n\nUsually the Microsoft WebView2 runtime is missing. Open the download page?"),
     "settings.ui": ("Oberfläche", "Interface"),
+    "settings.tab_about": ("Über", "About"),
+    "web.set.lang_note": ("Die Sprache wird sofort übernommen.", "The language is applied immediately."),
+    "web.set.restart_note": ("Oberfläche, Export-Ordner und Datenbank werden nach einem Neustart der App wirksam.",
+                             "Interface, export folder and database take effect after restarting the app."),
+    "web.set.restart": ("Oberfläche, Export-Ordner oder Datenbank wurden geändert. Das wird nach einem Neustart "
+                        "der App wirksam.\n\nJetzt neu starten?",
+                        "Interface, export folder or database were changed. This takes effect after restarting "
+                        "the app.\n\nRestart now?"),
+    "web.set.saved": ("Einstellungen gespeichert", "Settings saved"),
+    "web.set.color_custom": ("Eigene Farbe …", "Custom colour …"),
+    "web.set.color_default": ("Standard", "Default"),
+    "web.set.no_stocks": ("Noch keine Aktien aufgezeichnet.", "No stocks recorded yet."),
+    "web.set.db_size": ("Größe", "Size"),
+    "web.set.db_prices": ("Kurse", "Prices"),
+    "web.set.db_snaps": ("Snapshots", "Snapshots"),
+    "web.set.db_oldest": ("Ältester Kurs", "Oldest price"),
+    "web.set.db_file": ("Datei", "File"),
+    "about.text": ("Begleit-App für Screen Stocks: zeichnet Kurse und Portfolio auf, handelt über die Befehlsdateien "
+                   "des Mods und führt Automatik-Regeln aus.",
+                   "Companion app for Screen Stocks: records prices and portfolio, trades through the mod's command "
+                   "files and runs automation rules."),
+    "about.version": ("Version {version} · Lizenz Apache-2.0", "Version {version} · Apache-2.0 licence"),
+    "about.source": ("Quellcode auf GitHub", "Source code on GitHub"),
+    "about.libraries": ("Verwendete Bibliotheken", "Libraries used"),
+    "about.col_name": ("Bibliothek", "Library"),
+    "about.col_version": ("Version", "Version"),
+    "about.col_license": ("Lizenz", "Licence"),
+    "about.runtime": ("Laufzeit: Python {python} (PSF-Lizenz) · Darstellung: Microsoft Edge WebView2",
+                      "Runtime: Python {python} (PSF licence) · Rendering: Microsoft Edge WebView2"),
+    "about.tradingview": ("Die Charts verwenden TradingView Lightweight Charts™ – © TradingView, Inc., "
+                          "lizenziert unter Apache-2.0. Das TradingView-Logo ist in den Charts ausgeblendet; "
+                          "dieser Hinweis mit Link ersetzt es.",
+                          "The charts use TradingView Lightweight Charts™ – © TradingView, Inc., licensed under "
+                          "Apache-2.0. The TradingView logo is hidden in the charts; this notice and link replace it."),
+    "about.tradingview_link": ("tradingview.com öffnen", "Open tradingview.com"),
 
     # ---- announced events (pumps / crashes)
     "event.pump": ("Pump", "Pump"),
