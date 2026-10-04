@@ -390,7 +390,7 @@ class MarketTab(ttk.Frame):
         bar.pack(fill="x", pady=(6, 4))
         self.title = ttk.Label(bar, text="", style="Title.TLabel")
         self.title.pack(side="left", padx=(4, 16))
-        self.range = RangeBar(bar, self.refresh_chart)
+        self.range = RangeBar(bar, self._range_changed)
         self.range.pack(side="left")
         ttk.Button(bar, text=t("market.export_csv"), command=self._export).pack(side="right", padx=4)
 
@@ -401,6 +401,7 @@ class MarketTab(ttk.Frame):
         left = ttk.Frame(body, style="Panel.TFrame")
         left.pack(side="left", fill="both", expand=True)
         self.chart = LineChart(left, THEME, y_fmt=fmt.price, height=320)
+        self.chart.on_view_change = self.refresh_chart  # zoom/pan -> reload data for the visible window
         self.chart.pack(fill="both", expand=True)
         self.info = ttk.Label(left, text="", style="Muted.TLabel")
         self.info.pack(fill="x", padx=4, pady=(4, 2))
@@ -408,9 +409,15 @@ class MarketTab(ttk.Frame):
 
         self._ctx: Optional[Ctx] = None
 
+    def _range_changed(self) -> None:
+        self.chart.reset_zoom(notify=False)
+        self.refresh_chart()
+
     def _on_select(self, _e=None) -> None:
         sel = self.tree.selection()
         if sel:
+            if sel[0] != self.selected:
+                self.chart.reset_zoom(notify=False)  # another stock has a different price scale
             self.selected = sel[0]
             self.refresh_chart()
             if self._ctx:
@@ -472,7 +479,7 @@ class MarketTab(ttk.Frame):
         sid = self.selected
         st = next((s for s in ctx.stocks if s["stock_id"] == sid), {"stock_id": sid})
         self.title.configure(text=stock_label(st))
-        win = ctx.window(self.range.seconds)
+        win = self.chart.effective_window(ctx.window(self.range.seconds))
         if not win:
             self.chart.set_data([], empty_text=t("common.no_data"))
             return
@@ -525,7 +532,7 @@ class MarketTab(ttk.Frame):
             lo, hi, avg, n = stats
             first = db.price_at(sid, since) or pts[0][1]
             last = pts[-1][1]
-            parts.append(t("market.stats", range=self.range.label, lo=fmt.price(lo), hi=fmt.price(hi),
+            parts.append(t("market.stats", range=t("chart.zoomed") if self.chart.zoom else self.range.label, lo=fmt.price(lo), hi=fmt.price(hi),
                            avg=fmt.price(avg), change=fmt.pct(fmt.change_pct(last, first)),
                            spread=fmt.pct((hi / lo - 1) * 100 if lo else None, signed=False), n=fmt.num(n, 0)))
         if news:
@@ -559,14 +566,19 @@ class CompareTab(ttk.Frame):
         self.app = app
         bar = ttk.Frame(self, style="Panel.TFrame")
         bar.pack(fill="x", pady=(6, 4))
-        self.range = RangeBar(bar, self._rerender)
+        self.range = RangeBar(bar, self._range_changed)
         self.range.pack(side="left", padx=4)
         self.checks_frame = ttk.Frame(self, style="Panel.TFrame")
         self.checks_frame.pack(fill="x", padx=4)
         self.vars: dict[str, tk.BooleanVar] = {}
         self.chart = LineChart(self, THEME, y_fmt=lambda v: fmt.pct(v))
+        self.chart.on_view_change = self._rerender
         self.chart.pack(fill="both", expand=True, pady=(4, 0))
         self._ctx: Optional[Ctx] = None
+
+    def _range_changed(self) -> None:
+        self.chart.reset_zoom(notify=False)
+        self._rerender()
 
     def _rerender(self) -> None:
         if self._ctx:
@@ -588,7 +600,7 @@ class CompareTab(ttk.Frame):
                                activeforeground=THEME["fg"], font=THEME["font_bold"],
                                highlightthickness=0, bd=0).pack(side="left", padx=(0, 10))
 
-        win = ctx.window(self.range.seconds)
+        win = self.chart.effective_window(ctx.window(self.range.seconds))
         series = []
         if win:
             for sid in ids:
@@ -655,12 +667,13 @@ class PortfolioTab(ttk.Frame):
 
         bar = ttk.Frame(self, style="Panel.TFrame")
         bar.pack(fill="x", pady=4)
-        self.range = RangeBar(bar, self._rerender, default="1h")
+        self.range = RangeBar(bar, self._range_changed, default="1h")
         self.range.pack(side="left", padx=4)
 
         paned = ttk.PanedWindow(self, orient="vertical")
         paned.pack(fill="both", expand=True)
         self.chart = LineChart(paned, THEME, y_fmt=fmt.big, height=260)
+        self.chart.on_view_change = self._rerender
         paned.add(self.chart, weight=3)
 
         lower = ttk.Frame(paned, style="Panel.TFrame")
@@ -691,6 +704,10 @@ class PortfolioTab(ttk.Frame):
         paned.add(lower, weight=2)
         self._ctx: Optional[Ctx] = None
 
+    def _range_changed(self) -> None:
+        self.chart.reset_zoom(notify=False)
+        self._rerender()
+
     def _rerender(self) -> None:
         if self._ctx:
             self.refresh(self._ctx)
@@ -710,7 +727,7 @@ class PortfolioTab(ttk.Frame):
         if until:
             secs = self.range.seconds
             first = db.conn.execute("SELECT MIN(server_ms) FROM snapshots").fetchone()[0] or until
-            win = (first if secs is None else max(first, until - secs * 1000), until)
+            win = self.chart.effective_window((first if secs is None else max(first, until - secs * 1000), until))
         if win:
             rows = db.portfolio_series(*win, max_points=max(200, self.chart.winfo_width()))
             series = [Series(t("common.net_worth"), THEME["accent"], [(ts, n, n, n) for ts, n, _c in rows]),

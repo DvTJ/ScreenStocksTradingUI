@@ -24,6 +24,8 @@ führt automatische Regeln wie Stop-Loss und Take-Profit aus.
   Schaltern im Automatik-Tab (standardmäßig aus) kauft die App nach einer Pump-Ankündigung, verkauft beim Rückgang
   von der Spitze, shortet und covert nahe dem Ausgangskurs; vor einem Crash verkauft und shortet sie N Minuten
   vorher und covert und kauft beim Anstieg vom Tief zurück. Alle Schwellen sind einstellbar.
+- **Chart-Zoom** – Rechteck aufziehen zoomt in Zeit und Kurs, mit der rechten Maustaste verschieben, Doppelklick
+  (oder „Zoom zurücksetzen“) setzt zurück; ein Ausschnitt bis „jetzt“ läuft mit. In allen Charts.
 - **Vergleich** – alle Aktien normiert in % in einem Chart.
 - **Portfolio** – Nettovermögen und Bargeld im Verlauf, offene Positionen, Positionsänderungen.
 - **Dividenden** – der Export enthält nur den Dividendensatz; Auszahlungen werden daher an Bargeld-Anstiegen

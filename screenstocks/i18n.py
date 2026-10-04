@@ -436,6 +436,9 @@ STRINGS: dict[str, tuple[str, str]] = {
     "event.phase.failed": ("fehlgeschlagen", "failed"),
     "event.off": ("aus", "off"),
 
+    "chart.reset_zoom": ("Zoom zurücksetzen", "Reset zoom"),
+    "chart.zoomed": ("Ausschnitt", "Zoomed"),
+
     # ---- new tabs
     "tab.dividends": ("  Dividenden  ", "  Dividends  "),
     "tab.journal": ("  Journal  ", "  Journal  "),
