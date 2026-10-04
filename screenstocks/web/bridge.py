@@ -17,13 +17,14 @@ from ..automation import AutomationEngine
 from ..collector import Collector
 from ..i18n import STRINGS, get_language
 from ..storage import Storage
+from .market import MarketApi
 
 log = logging.getLogger(__name__)
 
 ALLOWED_LINKS = ("https://www.tradingview.com/", "https://github.com/", "https://developer.microsoft.com/")
 
 
-class Bridge:
+class Bridge(MarketApi):
     def __init__(self, collector: Collector, engine: AutomationEngine, db_path: Path, export_dir: Path):
         self._collector = collector
         self._engine = engine
@@ -43,7 +44,7 @@ class Bridge:
     def _shutdown(self) -> None:
         if self._closing:
             return
-        self._closing = True
+        self._closing = True        # page calls arriving from now on get empty answers
         self._engine.stop()
         self._collector.stop()
         with self._lock:
@@ -69,6 +70,8 @@ class Bridge:
 
     def tick(self) -> dict:
         """Called by the page every second: header values, status bar and update state."""
+        if self._closing:
+            return {}
         with self._lock:
             db = self._db
             st = self._collector.status.copy()

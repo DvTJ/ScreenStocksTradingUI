@@ -12,12 +12,9 @@
     ["dividends", "tab.dividends", 3], ["journal", "tab.journal", 3], ["stats", "tab.stats", 4],
     ["news", "tab.news", 4], ["automation", "tab.automation", 2],
   ];
-  const modules = {};
+  const modules = SS.modules;   // filled by the tab scripts via SS.registerTab (core.js)
   let active = "market";
   let lastTick = null;
-
-  /** Tab module API: {mount(el), show(), hide(), refresh(tick)} - all optional except mount. */
-  SS.registerTab = (id, module) => { modules[id] = module; };
 
   function buildTabs() {
     const nav = $("tabs"), views = $("views");

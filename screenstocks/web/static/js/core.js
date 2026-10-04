@@ -5,8 +5,11 @@ const SS = (window.SS = {
   lang: "en",
   texts: {},
   info: {},
-  tabs: [],
+  modules: {},
 });
+
+/** Tab modules register here (loaded before shell.js): {mount(el), show(), hide(), refresh(tick)}. */
+SS.registerTab = (id, module) => { SS.modules[id] = module; };
 
 // ------------------------------------------------------------------ bridge
 
@@ -29,12 +32,18 @@ SS.ready = () => new Promise((resolve) => {
   }
 });
 
-window.addEventListener("error", (e) => {
-  try { SS.call("log_client_error", `${e.message} @ ${e.filename}:${e.lineno}`); } catch (_) { /* no bridge */ }
-});
-window.addEventListener("unhandledrejection", (e) => {
-  try { SS.call("log_client_error", String(e.reason && (e.reason.stack || e.reason))); } catch (_) { /* no bridge */ }
-});
+// JavaScript errors go to app.log; errors before the bridge is ready are queued and sent later.
+SS.errors = [];
+SS.reportError = (msg) => {
+  SS.errors.push(msg);
+  const api = window.pywebview && window.pywebview.api;
+  if (api && api.log_client_error) {
+    while (SS.errors.length) api.log_client_error(SS.errors.shift()).catch(() => {});
+  }
+};
+window.addEventListener("error", (e) => SS.reportError(`${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`));
+window.addEventListener("unhandledrejection", (e) => SS.reportError(String(e.reason && (e.reason.stack || e.reason))));
+window.addEventListener("pywebviewready", () => SS.reportError && SS.errors.length && SS.reportError(SS.errors.pop()));
 
 // ------------------------------------------------------------------ texts
 

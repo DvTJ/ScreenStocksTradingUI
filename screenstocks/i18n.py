@@ -397,6 +397,11 @@ STRINGS: dict[str, tuple[str, str]] = {
                           "All other settings follow in phase 5 of the new interface – until then in the classic "
                           "interface."),
     "web.restart_now": ("Jetzt neu starten", "Restart now"),
+    "web.zoom_hint": ("Mausrad = Zoom · Ziehen = verschieben · Shift + Ziehen = Bereich zoomen · Doppelklick = zurücksetzen",
+                      "Mouse wheel = zoom · drag = pan · Shift + drag = zoom to area · double-click = reset"),
+    "web.details": ("Details zur Aktie", "Stock details"),
+    "web.points": ("Datenpunkte", "data points"),
+    "web.trades": ("Trades", "trades"),
     "web.fallback_title": ("Klassische Oberfläche", "Classic interface"),
     "web.fallback_text": ("Die neue Oberfläche kann auf diesem PC nicht starten, deshalb öffnet sich die klassische.\n\n"
                           "Grund: {reason}\n\nMeist fehlt die Microsoft-WebView2-Laufzeit. Download-Seite öffnen?",
