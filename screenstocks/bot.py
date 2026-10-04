@@ -38,7 +38,7 @@ from dataclasses import asdict, dataclass, field, replace
 from typing import Optional
 
 from .events import FINAL as EVENT_FINAL, load_settings as load_event_settings
-from .commands import ACTIONS, CommandWriter, action_name, reason_text, status_text
+from .commands import ACTIONS, CommandWriter, reason_text, status_text
 from .gui import fmt
 from .i18n import de, en, fr, t
 from .storage import Storage
@@ -988,7 +988,11 @@ class BotTrader:
             if s.paper:
                 self._paper_trade(db, s, held, sid, action, reason, prices[sid], z, now_s, stocks[sid], snap)
                 return                                # one command per step, as live
-            if self._send(db, s, sid, action, reason, prices[sid], z, now_s, stocks[sid], snap.get("cash") or 0):
+            h, own = held.get(sid), 100
+            have = positions.get(sid, {}).get("shares_owned" if action == "sell" else "shares_shorted") or 0
+            if reason != "entry" and h and h.get("shares") and have > h["shares"] * 1.01:      # bought more outside the bot
+                own = max(1, int(h["shares"] / have * 100))                                    # close only the bot's part
+            if self._send(db, s, sid, action, reason, prices[sid], z, now_s, stocks[sid], snap.get("cash") or 0, own):
                 return                                # one command per step; the writer rate-limits anyway
 
     def _decision(self, db: Storage, s: BotSettings, held: dict, sid: str, action: str, price: float, z: float,
@@ -1056,9 +1060,9 @@ class BotTrader:
         self._save_held(db, held)
 
     def _send(self, db: Storage, s: BotSettings, sid: str, action: str, reason: str, price: float,
-              z: Optional[float], now_s: float, stock: dict, cash: float) -> bool:
+              z: Optional[float], now_s: float, stock: dict, cash: float, close_pct: int = 100) -> bool:
         pct = (stake_pct(s.trade_pct, z, self.strategy.p(sid), cash, cash, price, stock["available_shares"],
-                         action == "buy") if reason == "entry" else 100)
+                         action == "buy") if reason == "entry" else close_pct)
         if reason == "entry" and pct < 1:
             return False                                   # over the risk budget
         known = {r["id"] for r in db.command_results(200)}
@@ -1093,7 +1097,9 @@ class BotTrader:
                 record_fee(db, sid, "in", (real / price - 1) * 100 * (1 if sent.action == "buy" else -1))
                 held[sid] = {"side": "long" if sent.action == "buy" else "short",
                              "entry_price": real,
-                             "entry_s": now_s, "target": pd["target"], "money": self._real_money(db, sent, pd["money"])}
+                             "entry_s": now_s, "target": pd["target"], "money": self._real_money(db, sent, pd["money"]),
+                             "shares": (db.current_positions().get(sid) or {}).get(
+                                 "shares_owned" if sent.action == "buy" else "shares_shorted")}
                 self._log(db, sid, t(f"bot.log.{sent.action}", sid=sid, price=fmt.price(held[sid]["entry_price"]),
                                      target=fmt.price(pd["target"])))
                 self._save_held(db, held)

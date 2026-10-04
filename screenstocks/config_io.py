@@ -17,7 +17,7 @@ FORMAT = "screenstocks-automation"
 RULE_FIELDS = ("stock_id", "kind", "side", "mode", "value", "percent", "confirm_s", "repeat")
 
 
-def export_config(db: Storage, rule_ids=None, with_events: bool = True, with_bot: bool = True) -> dict:
+def export_config(db: Storage, rule_ids=None, with_events: bool = True, with_bot: bool = False) -> dict:
     """rule_ids: rules to include (None = all). Unchosen parts are left out of the file."""
     data = {"format": FORMAT, "version": 1}
     rules = [r for r in db.rules() if rule_ids is None or r["id"] in rule_ids]
@@ -55,6 +55,8 @@ def import_config(db: Storage, data: dict) -> int:
         events.save_settings(db, events.EventSettings(**ev))
     if "bot" in data:
         bt = {k: v for k, v in data["bot"].items() if k in bot.BotSettings.__dataclass_fields__}
+        now = bot.load_settings(db)
+        bt["enabled"], bt["paper"] = now.enabled, now.paper      # a shared file never switches the bot on or off
         bot.save_settings(db, bot.BotSettings(**bt))
     return added
 

@@ -1,6 +1,7 @@
 """Self-check for the bot, its calibration and the config export/import:  python tools/check_bot.py"""
 
 import math
+from dataclasses import replace
 import random
 import string
 import sys
@@ -261,10 +262,10 @@ def check_config_roundtrip() -> None:
         mine = bot.BotSettings(enabled=True, level="advanced", trade_pct=40, excluded=["$X"], overrides={"entry_z": 4.0})
         bot.save_settings(src, mine)
         file = Path(d) / "cfg.json"
-        config_io.save_file(src, file)
+        config_io.save_file(src, file, with_bot=True)
         assert config_io.load_file(dst, file) == 1
         assert config_io.load_file(dst, file) == 0, "re-import must not duplicate rules"
-        assert bot.load_settings(dst) == mine and dst.rules()[0]["repeat"] == 1
+        assert bot.load_settings(dst) == replace(mine, enabled=False) and dst.rules()[0]["repeat"] == 1, "bot settings arrive switched off"
         part = config_io.export_config(src, rule_ids=set(), with_events=False, with_bot=False)
         assert set(part) == {"format", "version"}, "only chosen parts may be exported"
         before = bot.load_settings(dst)
@@ -272,7 +273,7 @@ def check_config_roundtrip() -> None:
         assert bot.load_settings(dst) == before, "absent blocks must not be touched"
         old_file = {"format": config_io.FORMAT, "version": 1, "bot": {"enabled": True, "entry_z": 4.0, "tau_s": 99}}
         config_io.import_config(dst, old_file)
-        assert bot.load_settings(dst).enabled and bot.load_settings(dst).level == "simple", "old files still import"
+        assert not bot.load_settings(dst).enabled and bot.load_settings(dst).level == "simple", "old files import but never switch the bot on"
         try:
             config_io.import_config(dst, {"format": "nope"})
             raise AssertionError("bad file accepted")

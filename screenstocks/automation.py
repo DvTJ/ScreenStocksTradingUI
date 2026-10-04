@@ -257,8 +257,11 @@ class AutomationEngine(threading.Thread):
         now = time.time()
 
         self.events.step(db, load_event_settings(db), live, enabled, server_now, prices, positions, snap)
-        self.bot.step(db, load_bot_settings(db), live, enabled, now, server_now,
-                      {s["stock_id"]: s for s in db.stocks()}, positions, snap)
+        try:
+            self.bot.step(db, load_bot_settings(db), live, enabled, now, server_now,
+                          {s["stock_id"]: s for s in db.stocks()}, positions, snap)
+        except Exception:
+            log.exception("bot error")                    # must not stop the rules below (stop-losses)
         if not rules:
             return
 

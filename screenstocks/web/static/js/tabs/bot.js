@@ -310,7 +310,7 @@
     S.thinkSig = sig;
     const box = q('[data-role="thoughts"]');
     box.innerHTML = list.map((x) =>
-      `<div class="item${x.msg.startsWith("DE") ? " decision" : ""}${x.code.startsWith("event") ? " link" : ""}" data-code="${esc(x.code)}"><span class="t">${esc(fmt.clock(x.time, true))}</span><span title="${esc(x.msg)}">${esc(x.msg)}</span></div>`).join("")
+      `<div class="item${x.code.startsWith("enter_") ? " decision" : ""}${x.code.startsWith("event") ? " link" : ""}" data-code="${esc(x.code)}"><span class="t">${esc(fmt.clock(x.time, true))}</span><span title="${esc(x.msg)}">${esc(x.msg)}</span></div>`).join("")
       || `<div class="muted">–</div>`;
     box.onclick = (e) => { const it = e.target.closest(".item.link"); if (it && !String(window.getSelection()).length) SS.goto("automation"); };
   }
