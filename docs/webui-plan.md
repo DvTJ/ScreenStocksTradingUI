@@ -46,7 +46,7 @@ screenstocks/gui/          klassische Tkinter-Oberfläche (bleibt)
 | 3 Portfolio, Dividenden, Journal | ✔ erledigt |
 | 4 Vergleich, Statistik, News | ✔ erledigt |
 | 5 Einstellungen, Assistent | ✔ erledigt |
-| 6 Feinschliff, Release 2.0.0 | offen |
+| 6 Feinschliff, Release 2.0.0 | ✔ fertig – Test-Build, Release nach OK |
 
 ## Phasen
 

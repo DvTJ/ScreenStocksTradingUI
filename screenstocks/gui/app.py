@@ -14,7 +14,7 @@ import webbrowser
 from .. import __version__, config, settings as settings_mod, updater
 from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, AutomationEngine, condition_met,
                           describe_trigger, has_position, kind_name, mode_name, needs_position, side_name,
-                          trigger_price)
+                          status_display, status_msg, trigger_price)
 from ..collector import Collector, CollectorStatus
 from ..events import EventSettings, load_settings as load_event_settings, save_settings as save_event_settings
 from ..commands import ACTIONS, CommandWriter, action_label, action_name, normalize_percent, reason_text, status_text
@@ -1100,7 +1100,7 @@ class AutomationTab(ttk.Frame):
             rid = self._editing
             ctx.db.update_rule(rid, stock_id=rule["stock_id"], kind=rule["kind"], side=rule["side"], mode=rule["mode"],
                                value=rule["value"], percent=rule["percent"], confirm_s=rule["confirm_s"],
-                               repeat=rule["repeat"], extreme=None, status=t("rule.st.active"))
+                               repeat=rule["repeat"], extreme=None, status=status_msg("rule.st.active"))
             ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                             t("rule.log.edited", kind=kind_name(rule["kind"]),
                               trigger=describe_trigger(rule, None, fmt.price, fmt.decimal_sep()), p=rule["percent"],
@@ -1110,7 +1110,7 @@ class AutomationTab(ttk.Frame):
             return
         rid = ctx.db.add_rule(rule["stock_id"], rule["kind"], rule["side"], rule["mode"], rule["value"],
                               rule["percent"], rule["confirm_s"], int(time.time() * 1000),
-                              repeat=bool(rule["repeat"]), status=t("rule.st.active"))
+                              repeat=bool(rule["repeat"]), status=status_msg("rule.st.active"))
         ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                         t("rule.log.created", kind=kind_name(rule["kind"]),
                           side=side_name(rule["side"]) if rule["kind"] in EXIT_KINDS else "",
@@ -1138,7 +1138,7 @@ class AutomationTab(ttk.Frame):
         rule = next((r for r in self._ctx.db.rules() if r["id"] == rid), None)
         if rule:
             on = not rule["enabled"]
-            self._ctx.db.update_rule(rid, enabled=int(on), status=t("rule.st.active") if on else t("rule.st.disabled"),
+            self._ctx.db.update_rule(rid, enabled=int(on), status=status_msg("rule.st.active") if on else status_msg("rule.st.disabled"),
                                      **({"extreme": None} if on else {}))
             self._ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                                   t("rule.log.enabled") if on else t("rule.log.disabled_manual"))
@@ -1273,10 +1273,10 @@ class AutomationTab(ttk.Frame):
                 describe_trigger(r, trig, fmt.price, fmt.decimal_sep()), fmt.pct_int(r["percent"]), fmt.price(price), fmt.pct(dist),
                 f"{r['confirm_s']:g} s" if r["confirm_s"] else "–",
                 t("auto.repeat_cell", n=r["runs"]) if r["repeat"] else t("auto.once_cell", n=r["runs"]),
-                "✔" if r["enabled"] else "–", r["status"] or ""),
+                "✔" if r["enabled"] else "–", status_display(r["status"])),
                 dict(id=r["id"], stock=r["stock_id"], kind=r["kind"], side=r["side"], trigger=trig, pct=r["percent"],
                      price=price, dist=dist, confirm=r["confirm_s"], repeat=(r["repeat"], r["runs"]), active=r["enabled"],
-                     status=r["status"]),
+                     status=status_display(r["status"])),
                 tags))
         self.rules_tree.set_rows(rows)
 

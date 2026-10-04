@@ -35,7 +35,7 @@ def run(start_backend: Callable[[], tuple[Collector, AutomationEngine, Path, Pat
     page = static_dir() / ("setup.html" if setup else "index.html")
     window = webview.create_window(
         f"{t('app.title')}  v{__version__}", str(page), js_api=bridge,
-        width=1500, height=930, min_size=(1100, 700), background_color="#0f1012", text_select=False)
+        width=1500, height=930, min_size=(900, 600), background_color="#0f1012", text_select=False)
     bridge._attach(window)
     window.events.closed += bridge._shutdown
     icon = resource_path("assets/icon.ico")

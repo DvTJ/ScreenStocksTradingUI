@@ -60,7 +60,7 @@
           </div>
           <div class="cstats" data-role="stats"></div>
           <div class="cfoot">
-            <span class="hint">${esc(t("web.zoom_hint"))}</span>
+            <span class="hint" title="${esc(t("web.zoom_hint"))}">${esc(t("web.zoom_hint"))}</span>
             <a class="attribution" data-role="attribution">Charts: TradingView Lightweight Charts™ · © TradingView, Inc. · tradingview.com</a>
           </div>
         </section>
@@ -464,5 +464,20 @@
     else await pollSeries();
   }
 
-  SS.registerTab("market", { mount, refresh, show: () => { if (S.selected) loadSeries(true); } });
+  /** Keyboard: arrow up/down = previous/next stock in the shown order, R = reset the chart zoom. */
+  function key(e) {
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      const rows = [...q('[data-role="rows"]').querySelectorAll(".wrow")];
+      if (!rows.length) return false;
+      const i = rows.findIndex((el) => el.dataset.id === S.selected);
+      const next = rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))];
+      select(next.dataset.id);
+      q(`.wrow[data-id="${CSS.escape(next.dataset.id)}"]`).scrollIntoView({ block: "nearest" });
+      return true;
+    }
+    if (e.key === "r" || e.key === "R") { resetZoom(); return true; }
+    return false;
+  }
+
+  SS.registerTab("market", { mount, refresh, key, show: () => { if (S.selected) loadSeries(true); } });
 })();

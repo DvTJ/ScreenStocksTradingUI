@@ -23,6 +23,7 @@
       b.dataset.tab = id;
       b.setAttribute("role", "tab");
       b.textContent = t(key).trim();
+      b.title = t("web.key_tab", { n: TAB_ORDER.findIndex((x) => x[0] === id) + 1 });
       b.onclick = () => activate(id);
       nav.appendChild(b);
       const view = document.createElement("section");
@@ -53,6 +54,7 @@
     const state = $("kpi-state");
     state.classList.toggle("live", !!d.live);
     $("state-text").textContent = d.live ? "LIVE" : (d.market_found ? t("web.paused") : t("web.no_market"));
+    state.title = $("state-text").textContent;          // the text is hidden in narrow windows
     $("kpi-net").textContent = fmt.big(d.net);
     $("kpi-cash").textContent = fmt.big(d.cash);
     $("kpi-level").textContent = d.level ?? "–";
@@ -111,6 +113,25 @@
     };
   }
 
+  // ---------------------------------------------------------------- keyboard
+  // 1-8 = tabs, Ctrl+, = settings; everything else goes to the active tab (e.g. arrows in the market).
+  // Off while typing or while a dialog is open (Esc closes dialogs, handled by the dialogs themselves).
+  function onKey(e) {
+    const el = e.target;
+    if (el && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName))) return;
+    if (!$("modal").classList.contains("hidden") || document.querySelector(".sheet-backdrop")) return;
+    if (e.ctrlKey && !e.altKey && e.key === ",") { e.preventDefault(); SS.openSettings(); return; }
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);      // physical key: works on every layout
+    if (digit && !e.shiftKey && Number(digit[1]) <= TAB_ORDER.length) {
+      e.preventDefault();
+      activate(TAB_ORDER[Number(digit[1]) - 1][0]);
+      return;
+    }
+    const m = modules[active];
+    if (m && m.key && m.key(e)) e.preventDefault();
+  }
+
   // ---------------------------------------------------------------- loop
   async function tick() {
     try {
@@ -134,7 +155,8 @@
     SS.texts = info.texts || {};
     document.documentElement.lang = SS.lang;
     SS.applyTexts();
-    $("btn-settings").title = t("settings.title");
+    $("btn-settings").title = `${t("settings.title")} (${t("web.key_ctrl")}+,)`;
+    document.addEventListener("keydown", onKey);
     $("btn-settings").onclick = () => SS.openSettings();
     bindUpdate();
     buildTabs();

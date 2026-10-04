@@ -7,7 +7,9 @@ With "repeat" it stays enabled and re-arms once the price has left the trigger
 zone again, so a limit buy below its limit does not fire on every tick.
 """
 
+import json
 import logging
+import re
 import threading
 import time
 from typing import Optional
@@ -16,7 +18,7 @@ from . import config
 from .collector import Collector
 from .commands import CommandWriter, action_name, reason_text, status_text, ACTIONS
 from .events import EventTrader, load_settings as load_event_settings
-from .i18n import t
+from .i18n import STRINGS, t
 from .storage import Storage
 
 log = logging.getLogger(__name__)
@@ -112,6 +114,66 @@ def describe_trigger(rule: dict, trig: Optional[float], fmt_price, decimal_sep: 
     return f"{op} {fmt_price(trig if trig is not None else rule['value'])}"
 
 
+# ---------------------------------------------------------------- rule status
+# The status is stored as key + raw values ({"k": "rule.st.…", "v": {...}}) and translated when it is
+# shown, so it follows the current language. Reason/status codes of the game are translated, too.
+_STATUS_CONVERT = {"reason": reason_text, "status": status_text}
+
+
+def status_msg(key: str, **values) -> str:
+    return json.dumps({"k": key, "v": {k: str(v) for k, v in values.items()}}, ensure_ascii=False)
+
+
+def status_display(raw: Optional[str]) -> str:
+    """Stored rule status -> text in the current language (older plain texts are shown as they are)."""
+    if not raw or not raw.startswith('{"k"'):
+        return raw or ""
+    try:
+        data = json.loads(raw)
+        values = {k: _STATUS_CONVERT[k](v) if k in _STATUS_CONVERT else v for k, v in data.get("v", {}).items()}
+        return t(data["k"], **values)
+    except (ValueError, KeyError, TypeError):
+        return raw
+
+
+def _status_patterns() -> list[tuple[str, re.Pattern]]:
+    """Regexes for the German and English status texts, most specific (longest literal text) first."""
+    out = []
+    for key, pair in STRINGS.items():
+        if not key.startswith("rule.st."):
+            continue
+        for text in pair:
+            parts = re.split(r"\{(\w+)\}", text)
+            rx = "".join(re.escape(p) if i % 2 == 0 else f"(?P<{p}>.+?)" for i, p in enumerate(parts))
+            literal = sum(len(p) for p in parts[::2])
+            out.append((literal, key, re.compile(f"^{rx}$", re.S)))
+    return [(key, rx) for _, key, rx in sorted(out, key=lambda x: -x[0])]
+
+
+def migrate_status_texts(db: Storage) -> int:
+    """Convert statuses stored as translated text (before 2.0) into key + values. Returns the count."""
+    patterns, changed = _status_patterns(), 0
+    # translated game codes back to the codes ("Kein Volumen verfügbar" -> "no-volume")
+    codes = {"status": {}, "reason": {}}
+    for key, pair in STRINGS.items():
+        for name, prefix in (("status", "cmdstatus."), ("reason", "reason.")):
+            if key.startswith(prefix):
+                for text in pair:
+                    codes[name][text] = key[len(prefix):]
+    for rule in db.rules():
+        raw = rule.get("status")
+        if not raw or raw.startswith('{"k"'):
+            continue
+        for key, rx in patterns:
+            m = rx.match(raw)
+            if m:
+                values = {k: codes.get(k, {}).get(v, v) for k, v in m.groupdict().items()}
+                db.update_rule(rule["id"], status=status_msg(key, **values))
+                changed += 1
+                break
+    return changed
+
+
 class AutomationEngine(threading.Thread):
     INTERVAL_S = 0.25
 
@@ -140,6 +202,12 @@ class AutomationEngine(threading.Thread):
     def run(self) -> None:
         db = Storage(self.db_path)
         try:
+            try:
+                n = migrate_status_texts(db)
+                if n:
+                    log.info("converted %d rule statuses to translatable form", n)
+            except Exception:
+                log.exception("rule status migration failed")
             while not self._stop_event.is_set():
                 try:
                     self._step(db)
@@ -219,35 +287,35 @@ class AutomationEngine(threading.Thread):
                 continue
             if needs_position(rule) and not has_position(rule, pos):
                 self._since.pop(rid, None)
-                self._set_status(db, rule, t("rule.st.wait_position"))
+                self._set_status(db, rule, status_msg("rule.st.wait_position"))
                 continue
             trig = trigger_price(rule, pos)
             if trig is None:
-                self._set_status(db, rule, t("rule.st.wait_reference"))
+                self._set_status(db, rule, status_msg("rule.st.wait_reference"))
                 continue
             met = condition_met(rule, price, trig)
             if rid in self._rearm:
                 if met:
-                    self._set_status(db, rule, t("rule.st.rearm", n=rule["runs"]))
+                    self._set_status(db, rule, status_msg("rule.st.rearm", n=rule["runs"]))
                     continue
                 self._rearm.discard(rid)
                 self._log(db, rule, t("rule.log.rearmed"))
             if not met:
                 self._since.pop(rid, None)
-                self._set_status(db, rule, t("rule.st.active"))
+                self._set_status(db, rule, status_msg("rule.st.active"))
                 continue
 
             since = self._since.setdefault(rid, now)
             if now - since < rule["confirm_s"]:
-                self._set_status(db, rule, t("rule.st.confirming", n=f"{now - since:.0f}",
-                                             total=f"{rule['confirm_s']:g}"))
+                self._set_status(db, rule, status_msg("rule.st.confirming", n=f"{now - since:.0f}",
+                                                      total=f"{rule['confirm_s']:g}"))
                 continue
             if self._retry_at.get(rid, 0) > now:
                 continue
             action = rule_action(rule)
             cd_col = {"buy": "next_buy_ms", "short": "next_short_ms"}.get(action)
             if cd_col and (snap.get(cd_col) or 0) > server_now:
-                self._set_status(db, rule, t("rule.st.wait_buy_cd" if action == "buy" else "rule.st.wait_short_cd"))
+                self._set_status(db, rule, status_msg("rule.st.wait_buy_cd" if action == "buy" else "rule.st.wait_short_cd"))
                 continue
             self._fire(db, rule, action, price, trig)
 
@@ -257,12 +325,12 @@ class AutomationEngine(threading.Thread):
             sent = self.writer.send(rule["stock_id"], action, rule["percent"])
         except Exception as exc:
             self._retry_at[rule["id"]] = time.time() + 10
-            self._set_status(db, rule, t("rule.st.send_error", error=exc))
+            self._set_status(db, rule, status_msg("rule.st.send_error", error=exc))
             self._log(db, rule, t("rule.log.send_failed", error=exc))
             return
         self._pending[rule["id"]] = (sent, known, time.time())
         db.update_rule(rule["id"], triggered_ms=int(time.time() * 1000))
-        self._set_status(db, rule, t("rule.st.triggered"))
+        self._set_status(db, rule, status_msg("rule.st.triggered"))
         self._log(db, rule, t("rule.log.triggered", kind=kind_name(rule["kind"]), price=f"{price:.4g}",
                               op="≤" if triggers_below(rule) else "≥", trigger=f"{trig:.4g}",
                               action=action_name(action), p=sent.percent))
@@ -286,28 +354,26 @@ class AutomationEngine(threading.Thread):
                     rule["extreme"] = None
                     self._since.pop(rule["id"], None)
                     self._rearm.add(rule["id"])
-                    self._set_status(db, rule, t("rule.st.rearm", n=runs))
+                    self._set_status(db, rule, status_msg("rule.st.rearm", n=runs))
                 else:
                     db.update_rule(rule["id"], enabled=0, runs=runs)
-                    self._set_status(db, rule, t("rule.st.done"))
+                    self._set_status(db, rule, status_msg("rule.st.done"))
             elif status in ("rejected", "failed"):
                 self._pending.pop(rule["id"])
                 if reason in RETRY_REASONS:
                     self._retry_at[rule["id"]] = time.time() + RETRY_BACKOFF_S
-                    self._set_status(db, rule, t("rule.st.waiting_reason", reason=reason_text(reason)))
+                    self._set_status(db, rule, status_msg("rule.st.waiting_reason", reason=reason))
                     self._log(db, rule, t("rule.log.retry", status=status_text(status), reason=reason_text(reason)))
                 elif rule["repeat"]:
                     # keep a repeating rule alive; it fires again on the next crossing
                     self._since.pop(rule["id"], None)
                     self._rearm.add(rule["id"])
-                    self._set_status(db, rule, t("rule.st.rejected_rearm", status=status_text(status),
-                                                 reason=reason_text(reason)))
+                    self._set_status(db, rule, status_msg("rule.st.rejected_rearm", status=status, reason=reason))
                     self._log(db, rule, t("rule.log.rejected_rearm", status=status_text(status),
                                           reason=reason_text(reason)))
                 else:
                     db.update_rule(rule["id"], enabled=0)
-                    self._set_status(db, rule, t("rule.st.final", status=status_text(status),
-                                                 reason=reason_text(reason)))
+                    self._set_status(db, rule, status_msg("rule.st.final", status=status, reason=reason))
                     self._log(db, rule, t("rule.log.disabled", status=status_text(status),
                                           reason=reason_text(reason)))
             return
@@ -315,5 +381,5 @@ class AutomationEngine(threading.Thread):
             self._pending.pop(rule["id"])
             self.writer.cancel(sent)
             self._retry_at[rule["id"]] = time.time() + 10
-            self._set_status(db, rule, t("rule.st.no_response"))
+            self._set_status(db, rule, status_msg("rule.st.no_response"))
             self._log(db, rule, t("rule.log.no_response"))

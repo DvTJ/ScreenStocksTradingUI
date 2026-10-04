@@ -9,7 +9,8 @@ from dataclasses import asdict, fields
 from typing import Optional
 
 from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, condition_met, describe_trigger,
-                          has_position, kind_name, mode_name, needs_position, side_name, trigger_price)
+                          has_position, kind_name, mode_name, needs_position, side_name, status_display,
+                          status_msg, trigger_price)
 from ..commands import normalize_percent
 from ..events import EventSettings, load_settings as load_event_settings, save_settings as save_event_settings
 from ..gui import fmt as pyfmt
@@ -82,7 +83,7 @@ class AutomationApi:
                     repeat=bool(r["repeat"]), runs=r["runs"] or 0, enabled=bool(r["enabled"]),
                     trigger_text=describe_trigger(r, trig, pyfmt.price, pyfmt.decimal_sep()), trigger=trig,
                     price=price, distance=(trig / price - 1) * 100 if trig and price else None,
-                    status=r["status"] or "", armed=r["id"] in armed))
+                    status=status_display(r["status"]), armed=r["id"] in armed))
             ev_settings = load_event_settings(db)
             snap = db.latest_snapshot() or {}
             now = snap.get("server_ms") or self._now_ms()
@@ -158,14 +159,14 @@ class AutomationApi:
                 rid = int(edit_id)
                 db.update_rule(rid, stock_id=rule["stock_id"], kind=rule["kind"], side=rule["side"], mode=rule["mode"],
                                value=rule["value"], percent=rule["percent"], confirm_s=rule["confirm_s"],
-                               repeat=rule["repeat"], extreme=None, status=t("rule.st.active"))
+                               repeat=rule["repeat"], extreme=None, status=status_msg("rule.st.active"))
                 db.log_rule(self._now_ms(), rid, rule["stock_id"],
                             t("rule.log.edited", kind=kind_name(rule["kind"]), trigger=trigger, p=rule["percent"],
                               rep=" ↻" if rule["repeat"] else ""))
                 return {"ok": True, "text": t("web.auto.saved", id=rid)}
             rid = db.add_rule(rule["stock_id"], rule["kind"], rule["side"], rule["mode"], rule["value"],
                               rule["percent"], rule["confirm_s"], self._now_ms(),
-                              repeat=bool(rule["repeat"]), status=t("rule.st.active"))
+                              repeat=bool(rule["repeat"]), status=status_msg("rule.st.active"))
             db.log_rule(self._now_ms(), rid, rule["stock_id"],
                         t("rule.log.created", kind=kind_name(rule["kind"]),
                           side=side_name(rule["side"]) if rule["kind"] in EXIT_KINDS else "",
@@ -181,7 +182,7 @@ class AutomationApi:
             if not r:
                 return
             on = not r["enabled"]
-            self._db.update_rule(r["id"], enabled=int(on), status=t("rule.st.active") if on else t("rule.st.disabled"),
+            self._db.update_rule(r["id"], enabled=int(on), status=status_msg("rule.st.active") if on else status_msg("rule.st.disabled"),
                                  **({"extreme": None} if on else {}))
             self._db.log_rule(self._now_ms(), r["id"], r["stock_id"],
                               t("rule.log.enabled") if on else t("rule.log.disabled_manual"))

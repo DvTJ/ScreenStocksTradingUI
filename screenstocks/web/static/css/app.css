@@ -103,7 +103,8 @@ a { color: var(--accent); }
 /* ---------------------------------------------------------------- views */
 #views { flex: 1; min-height: 0; position: relative; }
 .view { position: absolute; inset: 0; padding: var(--gap); display: none; }
-.view.active { display: block; }
+.view.active { display: block; animation: fade .14s ease-out; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-height: 0; }
 .panel h2 { margin: 0; font-size: 13px; font-weight: 600; }
 

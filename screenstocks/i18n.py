@@ -392,8 +392,12 @@ STRINGS: dict[str, tuple[str, str]] = {
     "web.ui_classic": ("Klassische Oberfläche", "Classic interface"),
     "web.ui_classic_desc": ("Die bisherige Oberfläche (Tkinter)", "The previous interface (Tkinter)"),
     "web.restart_now": ("Jetzt neu starten", "Restart now"),
-    "web.zoom_hint": ("Mausrad = Zoom · Ziehen = verschieben · Shift + Ziehen = Bereich zoomen · Doppelklick = zurücksetzen",
-                      "Mouse wheel = zoom · drag = pan · Shift + drag = zoom to area · double-click = reset"),
+    "web.key_tab": ("Taste {n}", "Key {n}"),
+    "web.key_ctrl": ("Strg", "Ctrl"),
+    "web.zoom_hint": ("Mausrad = Zoom · Ziehen = verschieben · Shift + Ziehen = Bereich zoomen · Doppelklick / R = "
+                      "zurücksetzen · ↑ / ↓ = Aktie wechseln",
+                      "Mouse wheel = zoom · drag = pan · Shift + drag = zoom to area · double-click / R = reset · "
+                      "↑ / ↓ = change stock"),
     "web.details": ("Details zur Aktie", "Stock details"),
     "web.points": ("Datenpunkte", "data points"),
     "web.trades": ("Trades", "trades"),
