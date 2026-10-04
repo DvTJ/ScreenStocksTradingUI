@@ -24,6 +24,10 @@ führt automatische Regeln wie Stop-Loss und Take-Profit aus.
   Schaltern im Automatik-Tab (standardmäßig aus) kauft die App nach einer Pump-Ankündigung, verkauft beim Rückgang
   von der Spitze, shortet und covert nahe dem Ausgangskurs; vor einem Crash verkauft und shortet sie N Minuten
   vorher und covert und kauft beim Anstieg vom Tief zurück. Alle Schwellen sind einstellbar.
+- **Bot** – ein Mean-Reversion-Trader (standardmäßig aus): Kurse schwanken um ein langsames Mittel, er kauft weit
+  unter dem gleitenden Mittel und verkauft bei der Rückkehr (optional Shorts, Stop-Loss, maximale Haltezeit, ein
+  Befehl zur Zeit, beachtet die Cooldowns). Ein Backtest spielt die Historie mit derselben Logik ab. Die
+  Einstellungen sind im Konfig-Export enthalten.
 - **Konfig-Export / -Import** – im Automatik-Tab lassen sich gewählte Regeln und die Pump-/Crash-Einstellungen
   als JSON exportieren und wieder importieren (identische Regeln werden übersprungen).
 - **Chart-Zoom** – Rechteck aufziehen zoomt in Zeit und Kurs, mit der rechten Maustaste verschieben, Doppelklick

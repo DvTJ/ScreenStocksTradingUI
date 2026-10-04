@@ -23,6 +23,10 @@ automated rules such as stop-loss and take-profit.
   in the Automation tab (off by default) the app buys after a pump announcement, sells on the pullback from the
   peak, shorts and covers near the starting price; before a crash it sells and shorts N minutes ahead and covers
   and buys back on the rebound from the low. All thresholds are adjustable.
+- **Bot** – a mean-reversion trader (off by default): prices swing around a slow average, so it buys when a price is
+  far below its moving average and sells when it returns (optional shorts, stop-loss, max hold time, one command at
+  a time, respects the game's cooldowns). A backtest replays the recorded history with the same logic. Its settings
+  are included in the config export.
 - **Config export / import** – the Automation tab can export chosen rules and the pump/crash settings to a JSON
   file and import them again (identical rules are skipped).
 - **Chart zoom** – drag a rectangle to zoom into time and price, drag with the right mouse button to pan, double-click

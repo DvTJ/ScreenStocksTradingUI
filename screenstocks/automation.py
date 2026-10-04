@@ -13,9 +13,10 @@ import time
 from typing import Optional
 
 from . import config
+from .bot import BotTrader, load_settings as load_bot_settings
 from .collector import Collector
 from .commands import CommandWriter, action_name, reason_text, status_text, ACTIONS
-from .events import EventTrader, load_settings as load_event_settings
+from .events import FINAL as EVENT_FINAL, EventTrader, load_settings as load_event_settings
 from .i18n import t
 from .storage import Storage
 
@@ -129,6 +130,7 @@ class AutomationEngine(threading.Thread):
         self._seen: set[int] = set()
         self.state = "starting"                     # starting / active / paused / not_live
         self.events = EventTrader(writer)           # announced pumps / crashes (events.py)
+        self.bot = BotTrader(writer)                # mean-reversion bot (bot.py)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -187,6 +189,9 @@ class AutomationEngine(threading.Thread):
         now = time.time()
 
         self.events.step(db, load_event_settings(db), live, enabled, server_now, prices, positions, snap)
+        event_ids = {ev["stock_id"] for ev in db.active_events(server_now) if ev["phase"] not in EVENT_FINAL}
+        self.bot.step(db, load_bot_settings(db), live, enabled, now, server_now,
+                      {s["stock_id"]: s for s in db.stocks()}, positions, snap, event_ids)
         if not rules:
             return
 
