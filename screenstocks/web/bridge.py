@@ -17,6 +17,7 @@ from ..automation import AutomationEngine
 from ..collector import Collector
 from ..i18n import STRINGS, get_language
 from ..storage import Storage
+from .automation_api import AutomationApi
 from .market import MarketApi
 
 log = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ log = logging.getLogger(__name__)
 ALLOWED_LINKS = ("https://www.tradingview.com/", "https://github.com/", "https://developer.microsoft.com/")
 
 
-class Bridge(MarketApi):
+class Bridge(MarketApi, AutomationApi):
     def __init__(self, collector: Collector, engine: AutomationEngine, db_path: Path, export_dir: Path):
         self._collector = collector
         self._engine = engine
