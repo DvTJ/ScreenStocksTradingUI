@@ -380,6 +380,30 @@ STRINGS: dict[str, tuple[str, str]] = {
                       "Restart now?"),
     "setup.mods_write_failed": ("mod-settings.json konnte nicht geschrieben werden:\n{error}",
                                 "Could not write mod-settings.json:\n{error}"),
+    # ---- web interface
+    "web.placeholder": ("Kommt in Phase {phase} der neuen Oberfläche.", "Coming in phase {phase} of the new interface."),
+    "web.paused": ("PAUSIERT", "PAUSED"),
+    "web.no_market": ("KEINE DATEN", "NO DATA"),
+    "web.source": ("Quelle", "Source"),
+    "web.game": ("Spielversion", "game version"),
+    "web.installing": ("Installer wird gestartet …", "Starting installer …"),
+    "web.settings_intro": ("Welche Oberfläche soll die App verwenden?", "Which interface should the app use?"),
+    "web.ui_web": ("Neue Oberfläche", "New interface"),
+    "web.ui_web_desc": ("Modernes Design mit TradingView-Charts", "Modern design with TradingView charts"),
+    "web.ui_classic": ("Klassische Oberfläche", "Classic interface"),
+    "web.ui_classic_desc": ("Die bisherige Oberfläche (Tkinter)", "The previous interface (Tkinter)"),
+    "web.settings_more": ("Alle weiteren Einstellungen folgen in Phase 5 der neuen Oberfläche – bis dahin in der "
+                          "klassischen Oberfläche.",
+                          "All other settings follow in phase 5 of the new interface – until then in the classic "
+                          "interface."),
+    "web.restart_now": ("Jetzt neu starten", "Restart now"),
+    "web.fallback_title": ("Klassische Oberfläche", "Classic interface"),
+    "web.fallback_text": ("Die neue Oberfläche kann auf diesem PC nicht starten, deshalb öffnet sich die klassische.\n\n"
+                          "Grund: {reason}\n\nMeist fehlt die Microsoft-WebView2-Laufzeit. Download-Seite öffnen?",
+                          "The new interface cannot start on this PC, so the classic one opens instead.\n\n"
+                          "Reason: {reason}\n\nUsually the Microsoft WebView2 runtime is missing. Open the download page?"),
+    "settings.ui": ("Oberfläche", "Interface"),
+
     # ---- announced events (pumps / crashes)
     "event.pump": ("Pump", "Pump"),
     "event.crash": ("Crash", "Crash"),

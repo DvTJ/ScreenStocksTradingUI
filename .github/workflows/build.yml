@@ -6,7 +6,7 @@ name: Build
 on:
   push:
     tags: ["v*"]
-    branches: [main]
+    branches: [main, webui]
   pull_request:
   workflow_dispatch:
 
@@ -60,6 +60,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "bootloader build failed" }
           Pop-Location
           python -m pip install $src
+          python -m pip install -r requirements.txt
           python -c "import PyInstaller, pathlib, hashlib; p = pathlib.Path(PyInstaller.__file__).parent / 'bootloader' / 'Windows-64bit-intel' / 'runw.exe'; print(PyInstaller.__version__, p, hashlib.sha256(p.read_bytes()).hexdigest())"
 
       - name: Build app (PyInstaller)

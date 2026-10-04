@@ -39,6 +39,8 @@ def main() -> int:
     ap.add_argument("--headless", action="store_true", help="record without a window")
     ap.add_argument("--setup", action="store_true", help="run the setup wizard")
     ap.add_argument("--lang", choices=["de", "en"], help="UI language for this run")
+    ap.add_argument("--ui", choices=["web", "classic"], help="user interface for this run (default: settings)")
+    ap.add_argument("--debug-ui", action="store_true", help="web UI with developer tools")
     ap.add_argument("--version", action="version", version=f"ScreenStocks Trading Bot {__version__}")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
@@ -86,10 +88,40 @@ def main() -> int:
         collector.join(timeout=2)
         return 0
 
+    ui = args.ui or settings.ui
+    if ui == "web":
+        from screenstocks.web import webview_available
+        ok, reason = webview_available()
+        if ok:
+            try:
+                from screenstocks.web.app import run as run_web
+                run_web(collector, engine, db_path, export_dir, debug=args.debug_ui)
+                collector.join(timeout=2)
+                return 0
+            except Exception as exc:  # e.g. WebView2 failed to start
+                reason = f"{type(exc).__name__}: {exc}"
+                log.exception("web UI failed, falling back to the classic interface")
+        log.warning("web UI not available (%s) - starting the classic interface", reason)
+        _show_web_fallback(reason)
+
     from screenstocks.gui.app import run
     run(collector, engine, db_path, export_dir)
     collector.join(timeout=2)
     return 0
+
+
+def _show_web_fallback(reason: str) -> None:
+    """Explain once why the classic interface starts instead of the web UI."""
+    import tkinter as tk
+    from tkinter import messagebox
+    from screenstocks.i18n import t
+    from screenstocks.web import WEBVIEW2_DOWNLOAD
+    root = tk.Tk()
+    root.withdraw()
+    if messagebox.askyesno(t("web.fallback_title"), t("web.fallback_text", reason=reason), parent=root):
+        import webbrowser
+        webbrowser.open(WEBVIEW2_DOWNLOAD)
+    root.destroy()
 
 
 if __name__ == "__main__":
