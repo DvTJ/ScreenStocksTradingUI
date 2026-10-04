@@ -474,6 +474,7 @@ STRINGS = {
     'bot.thinking': 'Was der Bot denkt',
     'bot.clear': 'Verlauf löschen',
     'bot.clear_ask': 'Die Trades dieses Modus, das Journal des Bots und seine Gedanken löschen? Offene Positionen bleiben erhalten, ein laufender Bot startet mit einem neuen Ergebnisblatt. Das kann nicht rückgängig gemacht werden.',
+    'bot.delete_trade': 'Diesen Trade löschen',
     'bot.cleared': 'Verlauf gelöscht.',
     'bot.trades_detail': 'Details ansehen',
     'bot.trades.title': 'Trades',

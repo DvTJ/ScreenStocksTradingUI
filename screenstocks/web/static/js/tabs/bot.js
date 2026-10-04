@@ -232,7 +232,7 @@
     body.querySelector('[data-role="csv"]').onclick = async () => done(await SS.call("bot_export_trades"));
     body.querySelector('[data-role="json"]').onclick = async () => done(await SS.call("bot_export_report"));
     const reason = (x) => t(x.reason === "target" && x.pnl < 0 ? "bot.reason.target_loss" : `bot.reason.${x.reason}`);
-    SS.ui.table(body.querySelector('[data-role="trades"]'), {
+    const tbl = SS.ui.table(body.querySelector('[data-role="trades"]'), {
       sortKey: "time_ms", empty: t("bot.results.none"), rowClass: (r) => cls(r.pnl),
       columns: [
         { key: "time_ms", label: t("bot.col_at"), render: (r) => `<span class="mono">${esc(fmt.clock(r.time_ms, true))}</span>` },
@@ -245,8 +245,17 @@
         { key: "exit", label: t("bot.col_exit"), align: "r", render: (r) => esc(fmt.price(r.exit)) },
         { key: "held_s", label: t("bot.col_held"), align: "r", render: (r) => esc(r.held_s ?? "–") },
         { key: "reason", label: t("bot.col_reason"), render: (r) => esc(reason(r)), value: (r) => reason(r) },
+        { key: "del", label: "", render: (r) => `<button class="btn ghost danger" data-del="${r.time_ms}" title="${esc(t("bot.delete_trade"))}">✕</button>`, value: () => 0 },
       ],
-    }).set(d.trades);
+    });
+    tbl.set(d.trades);
+    body.querySelector('[data-role="trades"]').onclick = async (e) => {
+      const b = e.target.closest("[data-del]");
+      if (!b) return;
+      await SS.call("bot_delete_trade", +b.dataset.del);
+      const n = await SS.call("bot_trades");
+      if (n && n.trades) tbl.set(n.trades);
+    };
     const modal = document.querySelector(".modal");
     modal.classList.add("wide");
     await SS.dialog({ title: t("bot.trades.title"), body, buttons: [{ label: "OK", value: true, kind: "primary" }] });

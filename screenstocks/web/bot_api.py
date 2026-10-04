@@ -73,6 +73,11 @@ class BotApi:
             res, paper = bot.load_results(self._db), bot.load_settings(self._db).paper
         return {**bot.trade_history(res), "paper": paper}
 
+    def bot_delete_trade(self, ts: int) -> dict:
+        with self._lock:
+            bot.delete_trade(self._db, int(ts))
+        return {"ok": True}
+
     def bot_export_trades(self) -> dict:
         path = self._bot_path("screenstocks-bot-trades.csv", CSV_TYPES, ".csv")
         if not path:

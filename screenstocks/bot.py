@@ -51,6 +51,10 @@ RESULTS_KEY = "bot_results"
 RESULT_TIMEOUT_S = 8.0
 SIGMA_FLOOR = 0.002          # log-price noise floor, avoids huge z on dead-flat prices
 REJECT_BLOCK_S = 30.0
+FEE_KEY = "bot_fees"
+FEE_SAMPLES = 20             # recent real costs kept per stock
+FEE_MIN_SAMPLES = 3          # fewer than this: the default FEE_PCT
+MISSING_GRACE_S = 5.0         # a held position must be absent from the game this long before the bot forgets it
 PAUSE_AFTER_LOSSES = 2       # consecutive losing trades on one stock ...
 PAUSE_S = 900                # ... pause it this long
 MAX_TRADES_KEPT = 500
@@ -58,7 +62,7 @@ MAX_TRADES_KEPT = 500
 LEVELS = ("simple", "medium", "advanced")
 SLIPPAGE = 1.5               # a stop may fill this much further than stop_pct (price jumps, latency)
 LATENCY_S = 2                # order fills this long after the signal
-FEE_PCT = 0.3                # per side; stands in for fees and the price impact of our own orders
+FEE_PCT = 1.4                # per side until measured per stock (see load_fees): ~0.9 % to buy + ~1.9 % to sell, halved
 CALIB_WINDOW_S = 3 * 3600    # history used to calibrate
 MIN_HISTORY_S = 900          # no calibration (hence no trading) with less history than this
 GAP_S = 60                   # recording gaps longer than this are cut out of the history
@@ -94,9 +98,9 @@ class Params:
 
 # caution -> (internal parameters, max positions)
 PRESETS = {
-    "prudent": (Params(tau_s=240, entry_z=1.0, exit_z=0.1, min_edge_pct=2.0, stop_pct=15.0, max_hold_s=300, confirm_s=8, max_loss_pct=3.0), 1),
-    "balanced": (Params(tau_s=240, entry_z=1.0, exit_z=0.1, min_edge_pct=2.0, stop_pct=15.0, max_hold_s=300, confirm_s=8, max_loss_pct=10.0), 2),
-    "aggressive": (Params(tau_s=240, entry_z=1.0, exit_z=0.1, min_edge_pct=2.0, stop_pct=15.0, max_hold_s=300, confirm_s=8, max_loss_pct=20.0), 3),
+    "prudent": (Params(tau_s=240, entry_z=1.0, exit_z=0.1, min_edge_pct=2.5, stop_pct=15.0, max_hold_s=300, confirm_s=8, max_loss_pct=3.0), 1),
+    "balanced": (Params(tau_s=240, entry_z=1.0, exit_z=0.1, min_edge_pct=2.5, stop_pct=15.0, max_hold_s=300, confirm_s=8, max_loss_pct=10.0), 2),
+    "aggressive": (Params(tau_s=240, entry_z=1.0, exit_z=0.1, min_edge_pct=2.5, stop_pct=15.0, max_hold_s=300, confirm_s=8, max_loss_pct=20.0), 3),
 }
 
 
@@ -393,9 +397,9 @@ def slice_news(news: dict, a: int, b: int) -> dict:
 
 def simulate(grids: dict, per: dict, trade_pct: int, max_positions: int, shorts: bool, buy_cd_s: float = 85,
              short_cd_s: float = 85, latency_s: Optional[int] = None, fee_pct: Optional[float] = None,
-             capital: float = 10000.0, limits: Optional[dict] = None, news: Optional[dict] = None) -> dict:
+             capital: float = 10000.0, limits: Optional[dict] = None, news: Optional[dict] = None, fees: Optional[dict] = None) -> dict:
     """Run the Strategy over 1 s price grids. Orders fill latency_s after the signal at that
-    second's price; fee_pct is charged on entry and exit. Each order moves trade_money() of the
+    second's price; fee_pct (or fees[sid], the measured one) is charged on entry and exit. Each order moves trade_money() of the
     free cash (shares still available for buys included); profits are added to the cash. A stock that
     loses PAUSE_AFTER_LOSSES times in a row is paused for PAUSE_S, as live."""
     limits, news = limits or {}, news or {}          # news: grid index -> [(sid, "high"/"low")]
@@ -434,7 +438,7 @@ def simulate(grids: dict, per: dict, trade_pct: int, max_positions: int, shorts:
                     next_short = i + short_cd_s
             else:
                 h = held.pop(sid)
-                ret = (fill / h["entry_price"] - 1) * (1 if h["side"] == "long" else -1) * 100 - 2 * fee_pct
+                ret = (fill / h["entry_price"] - 1) * (1 if h["side"] == "long" else -1) * 100 - 2 * (fees or {}).get(sid, fee_pct)
                 pnl = h["money"] * ret / 100
                 streak[sid] = streak.get(sid, 0) + 1 if ret < 0 else 0
                 if streak[sid] >= PAUSE_AFTER_LOSSES:
@@ -464,14 +468,15 @@ class Calib:
 
 
 def calibrate(grids: dict, s: BotSettings, buy_cd_s: float = 85, short_cd_s: float = 85, capital: float = 10000.0,
-              limits: Optional[dict] = None, news: Optional[dict] = None) -> dict[str, Calib]:
+              limits: Optional[dict] = None, news: Optional[dict] = None,
+              fees: Optional[dict] = None) -> dict[str, Calib]:
     """Best (tau_s, entry_z) per stock by net profit (in money) on the price grids."""
     base, _, shorts = effective(s)
     out = {}
     for sid, g in grids.items():
         def run(p):
             r = simulate({sid: g}, {sid: p}, s.trade_pct, 1, shorts, buy_cd_s, short_cd_s, capital=capital,
-                         limits=limits, news=news)
+                         limits=limits, news=news, fees=fees)
             profit = r["end"] - capital
             worst = min((x["pnl"] for x in r["trades"]), default=0.0)
             return Calib(p, profit - abs(min(0.0, worst)), r["n"], r["win_rate"], profit)
@@ -509,12 +514,12 @@ def backtest(db: Storage, s: BotSettings, since_ms: int, until_ms: int, buy_cd_s
     limits, news = stock_limits(db), news_index(db, secs)
     lo = max(0, mid - CALIB_WINDOW_S)
     calib = calibrate({k: g[lo:mid] for k, g in grids.items()}, s, buy_cd_s, short_cd_s,
-                      capital, limits, slice_news(news, lo, mid))
+                      capital, limits, slice_news(news, lo, mid), load_fees(db))
     base, max_pos, shorts = effective(s)
     chosen = pick(calib, max_pos)
     per = {sid: params_for(sid, base, calib, s) for sid in chosen}
     res = simulate({sid: grids[sid][mid:] for sid in chosen}, per, s.trade_pct, max_pos, shorts, buy_cd_s, short_cd_s,
-                   capital=capital, limits=limits, news=slice_news(news, mid, n))
+                   capital=capital, limits=limits, news=slice_news(news, mid, n), fees=load_fees(db))
     res["hours"] = (n - mid) / 3600
     res["stocks"] = chosen
     res["times_ms"] = [x * 1000 for x in secs[mid:]]       # real time of each simulated second
@@ -535,6 +540,38 @@ def load_results(db: Storage) -> dict:
 
 def save_results(db: Storage, res: dict) -> None:
     db.set_setting(_key(db, RESULTS_KEY), json.dumps(res))
+
+
+def delete_trade(db: Storage, ts: int) -> None:
+    """Remove one trade (by its timestamp) from the current results sheet."""
+    res = load_results(db)
+    res["trades"] = [x for x in res["trades"] if x["ts"] != ts]
+    save_results(db, res)
+
+
+def _fee_raw(db: Storage) -> dict:
+    try:
+        raw = json.loads(db.get_setting(FEE_KEY, "{}"))
+    except ValueError:
+        return {}
+    return {k: v for k, v in raw.items() if isinstance(v, dict)}
+
+
+def load_fees(db: Storage) -> dict:
+    """stock -> cost per side (%) of our own orders, FEE_PCT while unmeasured: the mean of the median cost of buying
+    and the median cost of selling (the game's sell spread, ~1.9 %, is about twice the buy one, ~0.9 %). Measured on
+    $PLAIN with 5-10 M shares: cost = 0.6 + 0.04 / M shares in, 1.7 + 0.03 / M shares out, so a smaller stake saves
+    almost nothing. ponytail: size is not modelled; a different stake needs fresh fills."""
+    return {sid: min(4.0, max(0.3, (statistics.median(v["in"]) + statistics.median(v["out"])) / 2))
+            for sid, v in _fee_raw(db).items() if min(len(v.get("in", ())), len(v.get("out", ()))) >= FEE_MIN_SAMPLES}
+
+
+def record_fee(db: Storage, sid: str, side: str, cost_pct: float) -> None:
+    """Remember what one real fill cost versus the signal price (positive = worse); side is "in" or "out"."""
+    raw = _fee_raw(db)
+    v = raw.setdefault(sid, {"in": [], "out": []})
+    v[side] = (v.get(side, []) + [round(cost_pct, 3)])[-FEE_SAMPLES:]
+    db.set_setting(FEE_KEY, json.dumps(raw))
 
 
 def paper_wallet(res: dict, held: dict) -> tuple[float, float]:
@@ -761,6 +798,7 @@ class BotTrader:
         self._calib_at = 0.0
         self._calib_key = None
         self._pending: Optional[dict] = None
+        self._missing: dict[str, float] = {}    # sid -> local time its position was first seen missing
         self._blocked: dict[str, float] = {}    # sid -> local time until which entries are skipped
         self._streak: dict[str, int] = {}       # consecutive losing trades per stock
         self._was_enabled: Optional[bool] = None
@@ -770,6 +808,7 @@ class BotTrader:
         self._warmed: set = set()
         self.last_check_ms = 0                  # the last time the strategy was evaluated (shows the bot is alive)
         self.watching = 0
+        self.fees: dict = {}                    # stock -> measured cost per side (%), see load_fees
         self._news_seen: set = set()            # (created_ms, stock id) of news already given to the strategy
         self.loss_limit_hit = False             # the bot lost loss_limit_pct % of the cash since activation
 
@@ -834,7 +873,7 @@ class BotTrader:
             if len(next(iter(grids.values()), ())) < MIN_HISTORY_S:
                 grids = {}
             self.calib = calibrate(grids, s, *cds, capital=(db.latest_snapshot() or {}).get("cash") or 10000.0,
-                                   limits=stock_limits(db), news=news_index(db, secs))
+                                   limits=stock_limits(db), news=news_index(db, secs), fees=load_fees(db))
             log.info("bot calibrated: %s", {k: (c.params.tau_s, c.params.entry_z, round(c.score, 1), c.n)
                                             for k, c in self.calib.items()})
         except Exception:
@@ -845,12 +884,18 @@ class BotTrader:
 
     # ------------------------------------------------------------------------ step
 
+    @staticmethod
+    def _covering(p: Params, fee: float) -> Params:
+        """The expected move back must cover the measured round trip cost of this stock."""
+        return replace(p, min_edge_pct=max(p.min_edge_pct, 2 * fee))
+
     def step(self, db: Storage, s: BotSettings, live: bool, enabled: bool, now_s: float, server_ms: int,
              stocks: dict, positions: dict, snap: dict) -> None:
         base, max_pos, shorts = effective(s)
         st = self.strategy
         st.default, st.max_positions, st.shorts = base, max_pos, shorts
-        st.per = {sid: params_for(sid, base, self.calib, s) for sid in stocks}
+        self.fees = load_fees(db)
+        st.per = {sid: self._covering(params_for(sid, base, self.calib, s), self.fees.get(sid, FEE_PCT)) for sid in stocks}
         prices = {sid: x["last_price"] for sid, x in stocks.items() if x["last_price"]}
         if live:
             self._prewarm(db, now_s, prices)
@@ -881,8 +926,11 @@ class BotTrader:
         if not ((enabled or s.paper) and live and s.enabled and self.allowed is not None):
             return
         # forget bot positions that no longer exist in the game (closed manually); practice positions are not in the game
-        for sid in [] if s.paper else [k for k, h in held.items()
-                    if not positions.get(sid, {}).get("shares_owned" if h["side"] == "long" else "shares_shorted")]:
+        gone = [] if s.paper else [k for k, h in held.items()
+                                   if not positions.get(k, {}).get("shares_owned" if h["side"] == "long" else "shares_shorted")]
+        self._missing = {k: self._missing.get(k, now_s) for k in gone}
+        for sid in [k for k in gone if now_s - self._missing[k] >= MISSING_GRACE_S]:      # not a stale / partial read
+            log.warning("bot: %s no longer in the game positions, forgotten (held: %s)", sid, held[sid])
             held.pop(sid)
             self._save_held(db, held)
         why: dict[str, tuple] = {}                  # stock -> (code, args): why the bot stays out of it
@@ -1004,7 +1052,7 @@ class BotTrader:
             self._paper_next[action] = now_s + cd
             self._log(db, sid, t(f"bot.log.{action}", sid=sid, price=fmt.price(price), target=fmt.price(held[sid]["target"])))
         else:
-            self._closed(db, held.pop(sid, None), sid, reason, price, now_s, fee_pct=2 * FEE_PCT)
+            self._closed(db, held.pop(sid, None), sid, reason, price, now_s, fee_pct=2 * self.fees.get(sid, FEE_PCT))
         self._save_held(db, held)
 
     def _send(self, db: Storage, s: BotSettings, sid: str, action: str, reason: str, price: float,
@@ -1041,14 +1089,20 @@ class BotTrader:
                                      reason=reason_text(res["reason"])))
                 return
             if sent.action in ("buy", "short"):
+                real = self._real_entry_price(db, sent, price)
+                record_fee(db, sid, "in", (real / price - 1) * 100 * (1 if sent.action == "buy" else -1))
                 held[sid] = {"side": "long" if sent.action == "buy" else "short",
-                             "entry_price": self._real_entry_price(db, sent, price),
+                             "entry_price": real,
                              "entry_s": now_s, "target": pd["target"], "money": self._real_money(db, sent, pd["money"])}
-                self._log(db, sid, t(f"bot.log.{sent.action}", sid=sid, price=fmt.price(price),
+                self._log(db, sid, t(f"bot.log.{sent.action}", sid=sid, price=fmt.price(held[sid]["entry_price"]),
                                      target=fmt.price(pd["target"])))
                 self._save_held(db, held)
             else:
-                self._closed(db, held.pop(sid, None), sid, pd["reason"], price, now_s)
+                h = held.get(sid)
+                real = self._real_exit_price(db, sid, h, price)
+                if real != price:
+                    record_fee(db, sid, "out", (price / real - 1) * 100)
+                self._closed(db, held.pop(sid, None), sid, pd["reason"], real, now_s)
                 self._save_held(db, held)
         elif time.time() - pd["t"] > RESULT_TIMEOUT_S:
             self._pending = None
@@ -1062,6 +1116,27 @@ class BotTrader:
         pos = db.current_positions().get(sent.stock_id) or {}
         real = pos.get("avg_buy_price" if sent.action == "buy" else "avg_short_price") or 0.0
         return real if real > 0 else estimate
+
+    @staticmethod
+    def _real_exit_price(db: Storage, sid: str, h: Optional[dict], estimate: float) -> float:
+        """What the game really paid for a closed long: the cash jump when the position went to zero (minus any dividend
+        landing in the same second) over the shares sold. Our own big order moves the price, so this is often 1-2 %
+        under the signal price. ponytail: shorts keep the signal price (the game's cash accounting for them is unclear)."""
+        if not h or h["side"] != "long" or not h.get("entry_price"):
+            return estimate
+        row = db.conn.execute("SELECT MAX(server_ms) FROM position_history WHERE stock_id=? AND shares_owned=0", (sid,)).fetchone()
+        m = row[0] if row else None
+        if not m:
+            return estimate
+        before = db.conn.execute("SELECT server_ms, cash FROM snapshots WHERE server_ms<? AND cash IS NOT NULL "
+                                 "ORDER BY server_ms DESC LIMIT 1", (m,)).fetchone()
+        after = db.conn.execute("SELECT cash FROM snapshots WHERE server_ms>=? AND cash IS NOT NULL "
+                                "ORDER BY server_ms LIMIT 1", (m,)).fetchone()
+        if not before or not after:
+            return estimate
+        shares = h["money"] / h["entry_price"]
+        real = (after[0] - before[1] - db.dividend_sum(before[0], m)) / shares if shares > 0 else 0.0
+        return real if 0.8 * estimate < real < 1.2 * estimate else estimate
 
     @staticmethod
     def _real_money(db: Storage, sent, estimate: float) -> float:

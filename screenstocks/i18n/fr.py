@@ -495,6 +495,7 @@ STRINGS = {
     'bot.thinking': 'Ce que pense le bot',
     'bot.clear': "Effacer l'historique",
     'bot.clear_ask': 'Supprimer les trades de ce mode, le journal du bot et ses pensées ? Les positions ouvertes sont conservées, un bot en marche repart sur une feuille de résultats neuve. Cette action est irréversible.',
+    'bot.delete_trade': 'Supprimer ce trade',
     'bot.cleared': 'Historique effacé.',
     'bot.trades_detail': 'Voir les détails',
     'bot.trades.title': 'Trades',

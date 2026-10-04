@@ -474,6 +474,7 @@ STRINGS = {
     'bot.thinking': 'What the bot thinks',
     'bot.clear': 'Clear history',
     'bot.clear_ask': "Delete the trades of this mode, the bot's journal and its thoughts? Open positions are kept, a running bot starts a fresh results sheet. This cannot be undone.",
+    'bot.delete_trade': 'Delete this trade',
     'bot.cleared': 'History cleared.',
     'bot.trades_detail': 'See details',
     'bot.trades.title': 'Trades',
