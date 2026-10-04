@@ -19,6 +19,7 @@ from ..i18n import STRINGS, get_language
 from ..storage import Storage
 from .automation_api import AutomationApi
 from .market import MarketApi
+from .analysis_api import AnalysisApi
 from .portfolio_api import PortfolioApi
 
 log = logging.getLogger(__name__)
@@ -26,13 +27,16 @@ log = logging.getLogger(__name__)
 ALLOWED_LINKS = ("https://www.tradingview.com/", "https://github.com/", "https://developer.microsoft.com/")
 
 
-class Bridge(MarketApi, AutomationApi, PortfolioApi):
+class Bridge(MarketApi, AutomationApi, PortfolioApi, AnalysisApi):
     def __init__(self, collector: Collector, engine: AutomationEngine, db_path: Path, export_dir: Path):
         self._collector = collector
         self._engine = engine
         self._export_dir = export_dir
         self._db = Storage(db_path, shared=True)
         self._lock = threading.Lock()
+        # second connection for slow read-only calculations (statistics), so they never block the 1 s tick
+        self._slow_db = Storage(db_path, shared=True)
+        self._slow_lock = threading.Lock()
         self._settings = settings_mod.load()
         self._window = None
         self._update: dict = {}            # latest release info + download progress for the UI
@@ -51,6 +55,8 @@ class Bridge(MarketApi, AutomationApi, PortfolioApi):
         self._collector.stop()
         with self._lock:
             self._db.close()
+        with self._slow_lock:
+            self._slow_db.close()
 
     def _close_window(self) -> None:
         if self._window is not None:

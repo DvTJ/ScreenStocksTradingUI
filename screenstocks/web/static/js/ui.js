@@ -89,7 +89,8 @@
   /**
    * Line chart (TradingView Lightweight Charts) with legend, wheel/drag zoom, Shift+drag
    * rectangle zoom and reset (double-click / button). series: [{key, label, color, area}]
-   * Returns {setData({key: points}), offset} - points are {time, value} with local-shifted seconds.
+   * setData({key: points}, offset) - points are {time, value} with local-shifted seconds.
+   * setSeries(list) replaces the series (e.g. when stocks appear), setVisible(key, on) hides one.
    */
   ui.lineChart = (el, { series, priceFormat = fmt.price }) => {
     const LW = LightweightCharts;
@@ -105,21 +106,31 @@
       crosshair: { mode: LW.CrosshairMode.Normal, vertLine: { color: "#3a3f46", labelBackgroundColor: "#2a2e34" }, horzLine: { color: "#3a3f46", labelBackgroundColor: "#2a2e34" } },
       localization: { priceFormatter: priceFormat, locale: SS.lang === "de" ? "de-DE" : "en-US" },
     });
-    const handles = {};
-    for (const s of series) {
-      handles[s.key] = s.area
-        ? chart.addSeries(LW.AreaSeries, { lineColor: s.color, topColor: s.color + "44", bottomColor: s.color + "04", lineWidth: 2, priceLineVisible: false })
-        : chart.addSeries(LW.LineSeries, { color: s.color, lineWidth: 2, priceLineVisible: false });
-    }
-    const first = handles[series[0].key];
+    let handles = {}, list = [];
+    const hidden = new Set();
     const state = { offset: 0, zoomed: false };
     const legend = el.querySelector(".legend"), reset = el.querySelector(".reset-zoom");
-    const legendHtml = (vals) => series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.label)} <b>${vals ? esc(priceFormat(vals[s.key])) : ""}</b></span>`).join("");
-    legend.innerHTML = legendHtml(null);
+    const shown = () => list.filter((s) => !hidden.has(s.key));
+    const legendHtml = (vals) => shown().map((s) => `<span><i style="background:${s.color}"></i>${esc(s.label)} <b>${vals && vals[s.key] != null ? esc(priceFormat(vals[s.key])) : ""}</b></span>`).join("");
+
+    function build(next) {
+      for (const h of Object.values(handles)) chart.removeSeries(h);
+      handles = {};
+      list = next;
+      for (const s of list) {
+        handles[s.key] = s.area
+          ? chart.addSeries(LW.AreaSeries, { lineColor: s.color, topColor: s.color + "44", bottomColor: s.color + "04", lineWidth: 2, priceLineVisible: false })
+          : chart.addSeries(LW.LineSeries, { color: s.color, lineWidth: 2, priceLineVisible: false });
+        if (hidden.has(s.key)) handles[s.key].applyOptions({ visible: false });
+      }
+      legend.innerHTML = legendHtml(null);
+    }
+    build(series);
+
     chart.subscribeCrosshairMove((p) => {
-      if (!p || !p.seriesData || !p.seriesData.get(first)) { legend.innerHTML = legendHtml(null); return; }
+      if (!p || !p.time || !p.seriesData || !p.seriesData.size) { legend.innerHTML = legendHtml(null); return; }
       const vals = {};
-      for (const s of series) { const d = p.seriesData.get(handles[s.key]); vals[s.key] = d ? d.value : null; }
+      for (const s of list) { const d = p.seriesData.get(handles[s.key]); vals[s.key] = d ? d.value : null; }
       legend.innerHTML = `<span>${esc(fmt.clock((p.time - state.offset) * 1000, true))}</span>` + legendHtml(vals);
     });
     const setZoomed = (on) => { state.zoomed = on; reset.classList.toggle("hidden", !on); };
@@ -127,17 +138,27 @@
     reset.onclick = doReset;
     el.addEventListener("dblclick", doReset);
     el.addEventListener("wheel", () => setZoomed(true), { passive: true });
-    ui.rectZoom(el, chart, first, () => setZoomed(true));
+    // the rectangle converts y to a price via the first visible series (all share the right price scale)
+    ui.rectZoom(el, chart, { coordinateToPrice: (y) => { const s = shown()[0]; return s ? handles[s.key].coordinateToPrice(y) : null; } },
+      () => setZoomed(true));
 
     return {
       chart,
       setData(data, offset) {
         state.offset = offset || 0;
         let any = false;
-        for (const s of series) { const pts = data[s.key] || []; handles[s.key].setData(pts); any = any || pts.length > 0; }
+        for (const s of list) { const pts = data[s.key] || []; handles[s.key].setData(pts); any = any || pts.length > 0; }
         el.querySelector(".empty").classList.toggle("hidden", any);
         if (!state.zoomed) chart.timeScale().fitContent();
       },
+      setSeries: build,
+      setVisible(key, on) {
+        if (on) hidden.delete(key); else hidden.add(key);
+        if (handles[key]) handles[key].applyOptions({ visible: on });
+        legend.innerHTML = legendHtml(null);
+      },
+      series: (key) => handles[key],
+      isZoomed: () => state.zoomed,
       resetZoom: doReset,
     };
   };
