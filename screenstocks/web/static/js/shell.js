@@ -10,7 +10,7 @@
   const TAB_ORDER = [
     ["market", "tab.market", 1], ["compare", "tab.compare", 4], ["portfolio", "tab.portfolio", 3],
     ["dividends", "tab.dividends", 3], ["journal", "tab.journal", 3], ["stats", "tab.stats", 4],
-    ["news", "tab.news", 4], ["automation", "tab.automation", 2],
+    ["news", "tab.news", 4], ["automation", "tab.automation", 2], ["bot", "tab.bot", 7],
   ];
   const modules = SS.modules;   // filled by the tab scripts via SS.registerTab (core.js)
   let active = "market";
@@ -39,6 +39,7 @@
     activate(active);
   }
 
+  SS.goto = (id) => activate(id);
   function activate(id) {
     if (modules[active] && modules[active].hide && active !== id) modules[active].hide();
     active = id;

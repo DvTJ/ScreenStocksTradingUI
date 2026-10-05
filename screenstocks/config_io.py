@@ -1,15 +1,15 @@
 """Export / import of the automation configuration as a JSON file.
 
-Covers the rules and the pump/crash event settings - each part is optional.
-Importing adds the rules (identical ones are skipped) and replaces the event
-settings only if the file contains them.
+Covers the rules, the pump/crash event settings and the bot settings - each part
+is optional. Importing adds the rules (identical ones are skipped) and replaces
+only the settings blocks present in the file.
 """
 
 import json
 import time
 from dataclasses import asdict
 
-from . import events
+from . import bot, events
 from .automation import KIND_KEYS, MODE_KEYS, SIDE_KEYS
 from .storage import Storage
 
@@ -17,7 +17,7 @@ FORMAT = "screenstocks-automation"
 RULE_FIELDS = ("stock_id", "kind", "side", "mode", "value", "percent", "confirm_s", "repeat")
 
 
-def export_config(db: Storage, rule_ids=None, with_events: bool = True) -> dict:
+def export_config(db: Storage, rule_ids=None, with_events: bool = True, with_bot: bool = False) -> dict:
     """rule_ids: rules to include (None = all). Unchosen parts are left out of the file."""
     data = {"format": FORMAT, "version": 1}
     rules = [r for r in db.rules() if rule_ids is None or r["id"] in rule_ids]
@@ -26,6 +26,8 @@ def export_config(db: Storage, rule_ids=None, with_events: bool = True) -> dict:
                          for r in rules]
     if with_events:
         data["events"] = asdict(events.load_settings(db))
+    if with_bot:
+        data["bot"] = asdict(bot.load_settings(db))
     return data
 
 
@@ -51,6 +53,11 @@ def import_config(db: Storage, data: dict) -> int:
     if "events" in data:
         ev = {k: v for k, v in data["events"].items() if k in events.EventSettings.__dataclass_fields__}
         events.save_settings(db, events.EventSettings(**ev))
+    if "bot" in data:
+        bt = {k: v for k, v in data["bot"].items() if k in bot.BotSettings.__dataclass_fields__}
+        now = bot.load_settings(db)
+        bt["enabled"], bt["paper"] = now.enabled, now.paper      # a shared file never switches the bot on or off
+        bot.save_settings(db, bot.BotSettings(**bt))
     return added
 
 

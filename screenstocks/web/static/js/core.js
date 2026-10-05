@@ -109,10 +109,17 @@ SS.esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<":
 
 // ------------------------------------------------------------------ toasts and dialogs
 
-SS.toast = (text, kind = "info", ms = 3200) => {
+SS.toast = (text, kind = "info", ms = 3200, action = null) => {
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
   el.textContent = text;
+  if (action) {                      // {label, run}: a button inside the notification
+    const b = document.createElement("button");
+    b.className = "btn ghost toast-action";
+    b.textContent = action.label;
+    b.onclick = () => { action.run(); el.remove(); };
+    el.appendChild(b);
+  }
   document.getElementById("toasts").appendChild(el);
   setTimeout(() => el.remove(), ms);
 };

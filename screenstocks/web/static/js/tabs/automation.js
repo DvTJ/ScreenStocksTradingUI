@@ -293,7 +293,9 @@
 
   function showResult(title, res) {
     if (!res || res.cancelled) return;
-    SS.dialog({ title, body: res.error || res.message, buttons: [{ label: "OK", value: true, kind: "primary" }] });
+    SS.dialog({ title, body: res.error || res.message, buttons: [
+      ...(res.path ? [{ label: t("bot.open_folder"), value: "open", kind: "ghost" }] : []),
+      { label: "OK", value: true, kind: "primary" }] }).then((v) => { if (v === "open") SS.call("reveal_file", res.path); });
   }
 
   // ------------------------------------------------------------------ refresh

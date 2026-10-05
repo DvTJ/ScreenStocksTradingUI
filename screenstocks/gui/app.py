@@ -23,6 +23,7 @@ from ..storage import Storage
 from . import fmt
 from .chart import HLine, LineChart, Marker, Series, blend
 from .analysis import DividendTab, JournalTab, StatsTab
+from .bot_tab import BotTab
 from .theme import THEME, apply_style, set_window_icon
 from .widgets import RangeBar, SortableTree, scrolled
 
@@ -853,7 +854,7 @@ class NewsTab(ttk.Frame):
 
 
 class ExportDialog(tk.Toplevel):
-    """Pick what goes into the exported config: single rules and the event settings."""
+    """Pick what goes into the exported config: single rules, event settings, bot settings."""
 
     def __init__(self, master, rules: list[dict], preselected: set):
         super().__init__(master)
@@ -862,7 +863,7 @@ class ExportDialog(tk.Toplevel):
         self.transient(master.winfo_toplevel())
         self.result: Optional[dict] = None
         self.rule_vars = {r["id"]: tk.BooleanVar(value=r["id"] in preselected) for r in rules}
-        self.ev_var = tk.BooleanVar(value=False)
+        self.ev_var, self.bot_var = tk.BooleanVar(value=False), tk.BooleanVar(value=False)
 
         def check(text, var, **kw):
             return tk.Checkbutton(self, text=text, variable=var, anchor="w", bg=THEME["panel"], fg=THEME["fg"],
@@ -879,6 +880,7 @@ class ExportDialog(tk.Toplevel):
         if not rules:
             ttk.Label(self, text=t("config.no_rules"), style="CardMuted.TLabel").pack(anchor="w", padx=18)
         check(t("config.with_events"), self.ev_var).pack(fill="x", padx=12, pady=(8, 0))
+        check(t("config.with_bot"), self.bot_var).pack(fill="x", padx=12)
         btns = ttk.Frame(self, style="Panel.TFrame")
         btns.pack(fill="x", padx=12, pady=10)
         ttk.Button(btns, text=t("setup.cancel"), command=self.destroy).pack(side="right")
@@ -887,15 +889,15 @@ class ExportDialog(tk.Toplevel):
         self.wait_window()
 
     def _select_all(self) -> None:
-        for var in (*self.rule_vars.values(), self.ev_var):
+        for var in (*self.rule_vars.values(), self.ev_var, self.bot_var):
             var.set(self.all_var.get())
 
     def _ok(self) -> None:
         ids = {rid for rid, v in self.rule_vars.items() if v.get()}
-        if not (ids or self.ev_var.get()):
+        if not (ids or self.ev_var.get() or self.bot_var.get()):
             messagebox.showinfo(t("config.export_title"), t("config.nothing"), parent=self)
             return
-        self.result = dict(rule_ids=ids, with_events=bool(self.ev_var.get()))
+        self.result = dict(rule_ids=ids, with_events=bool(self.ev_var.get()), with_bot=bool(self.bot_var.get()))
         self.destroy()
 
 
@@ -1280,6 +1282,7 @@ class AutomationTab(ttk.Frame):
         for key, var in self.ev_vars.items():
             v = getattr(settings, key)
             var.set(v if isinstance(v, bool) else f"{v:g}")
+        self.app.bot_tab.load()
         self.app.refresh_now()
         messagebox.showinfo(t("config.import_title"), t("config.imported", n=added), parent=self)
 
@@ -1425,10 +1428,11 @@ class App(tk.Tk):
         self.nb.pack(fill="both", expand=True, padx=8, pady=(6, 0))
         self.tabs = [MarketTab(self.nb, self), CompareTab(self.nb, self), PortfolioTab(self.nb, self),
                      DividendTab(self.nb, self), JournalTab(self.nb, self), StatsTab(self.nb, self),
-                     NewsTab(self.nb, self), AutomationTab(self.nb, self)]
+                     NewsTab(self.nb, self), AutomationTab(self.nb, self), BotTab(self.nb, self)]
+        self.bot_tab = self.tabs[-1]
         for tab, title in zip(self.tabs, (t("tab.market"), t("tab.compare"), t("tab.portfolio"),
                                             t("tab.dividends"), t("tab.journal"), t("tab.stats"),
-                                            t("tab.news"), t("tab.automation"))):
+                                            t("tab.news"), t("tab.automation"), t("tab.bot"))):
             self.nb.add(tab, text=title)
         self.nb.bind("<<NotebookTabChanged>>", lambda e: self.after_idle(self.refresh_active))
 

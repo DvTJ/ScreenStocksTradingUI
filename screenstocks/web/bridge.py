@@ -18,6 +18,7 @@ from ..collector import Collector
 from ..i18n import get_language, texts
 from ..storage import Storage
 from .automation_api import AutomationApi
+from .bot_api import BotApi
 from .market import MarketApi
 from .analysis_api import AnalysisApi
 from .portfolio_api import PortfolioApi
@@ -29,7 +30,7 @@ ALLOWED_LINKS = ("https://www.tradingview.com/", "https://github.com/", "https:/
                  "https://www.apache.org/", "https://www.python.org/")
 
 
-class Bridge(MarketApi, AutomationApi, PortfolioApi, AnalysisApi, SettingsApi):
+class Bridge(MarketApi, AutomationApi, BotApi, PortfolioApi, AnalysisApi, SettingsApi):
     def __init__(self, collector: Optional[Collector] = None, engine: Optional[AutomationEngine] = None,
                  db_path: Optional[Path] = None, export_dir: Optional[Path] = None):
         self._collector = self._engine = self._db = self._slow_db = self._export_dir = None
