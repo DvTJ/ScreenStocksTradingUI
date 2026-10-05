@@ -14,7 +14,7 @@ from .automation import KIND_KEYS, MODE_KEYS, SIDE_KEYS
 from .storage import Storage
 
 FORMAT = "screenstocks-automation"
-RULE_FIELDS = ("stock_id", "kind", "side", "mode", "value", "percent", "confirm_s", "repeat")
+RULE_FIELDS = ("stock_id", "kind", "side", "mode", "value", "percent", "confirm_s", "repeat", "activation")
 
 
 def export_config(db: Storage, rule_ids=None, with_events: bool = True, with_bot: bool = False) -> dict:
@@ -36,16 +36,19 @@ def import_config(db: Storage, data: dict) -> int:
     Raises ValueError for a file that is not an automation config."""
     if not isinstance(data, dict) or data.get("format") != FORMAT:
         raise ValueError("not a ScreenStocks automation config")
-    known = {(r["stock_id"], r["kind"], r["side"], r["mode"], r["value"], r["percent"]) for r in db.rules()}
+    known = {(r["stock_id"], r["kind"], r["side"], r["mode"], r["value"], r["percent"], r["activation"])
+             for r in db.rules()}
     added = 0
     for r in data.get("rules", []):
         if r.get("kind") not in KIND_KEYS or r.get("side") not in SIDE_KEYS or r.get("mode") not in MODE_KEYS:
             raise ValueError(f"invalid rule: {r}")
-        key = (r["stock_id"], r["kind"], r["side"], r["mode"], float(r["value"]), int(r["percent"]))
+        act = float(r["activation"]) if r.get("activation") else None      # trailing buy / short only
+        key = (r["stock_id"], r["kind"], r["side"], r["mode"], float(r["value"]), int(r["percent"]), act)
         if key in known:
             continue
         rid = db.add_rule(r["stock_id"], r["kind"], r["side"], r["mode"], float(r["value"]), int(r["percent"]),
-                          float(r.get("confirm_s", 0)), int(time.time() * 1000), bool(r.get("repeat")))
+                          float(r.get("confirm_s", 0)), int(time.time() * 1000), bool(r.get("repeat")),
+                          activation=act)
         if not r.get("enabled", True):
             db.update_rule(rid, enabled=0)
         known.add(key)

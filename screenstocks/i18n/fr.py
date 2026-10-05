@@ -654,4 +654,18 @@ STRINGS = {
     'about.runtime': 'Exécution : Python {python} (licence PSF) · Affichage : Microsoft Edge WebView2',
     'about.tradingview': 'Les graphiques utilisent TradingView Lightweight Charts™ – © TradingView, Inc., sous licence Apache-2.0. Le logo TradingView est masqué dans les graphiques ; cet avis et ce lien le remplacent.',
     'about.tradingview_link': 'Ouvrir tradingview.com',
+
+    # ---- trailing buy / short (2.1)
+    'kind.trailing_buy': 'Achat suiveur',
+    'kind.trailing_short': 'Short suiveur',
+    'mode.trail_up': '% de rebond',
+    'trigger.trail_buy': '+{v} % depuis le plus bas',
+    'trigger.trail_short': '−{v} % depuis le plus haut',
+    'trigger.activation': 'actif à partir de {op} {price}',
+    'auto.activation': 'Actif à partir de (cours)',
+    'auto.activation_ph': 'facultatif',
+    'auto.invalid_activation': "Le cours d'activation est invalide (laisser vide ou indiquer un prix supérieur à 0).",
+    'auto.help.trailing_buy': 'Achat suiveur : retient le cours le plus bas et achète {pct} % (du maximum possible) dès que le cours remonte du % indiqué. Avec « Actif à partir de », le suivi ne commence que lorsque le cours descend à ce prix ou en dessous.',
+    'auto.help.trailing_short': 'Short suiveur : retient le cours le plus haut et vend à découvert {pct} % (du maximum possible) dès que le cours recule du % indiqué. Avec « Actif à partir de », le suivi ne commence que lorsque le cours monte à ce prix ou au-dessus.',
+    'rule.st.wait_activation': 'attend que le cours atteigne {op} {price}',
 }

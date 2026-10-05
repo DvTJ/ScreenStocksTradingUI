@@ -16,7 +16,7 @@
 .card h2 .spacer { flex: 1; }
 
 /* rule form */
-.rform { display: grid; grid-template-columns: 110px 150px 100px minmax(170px, 1fr) 90px 110px; gap: 10px 12px; align-items: end; }
+.rform { display: grid; grid-template-columns: 110px 150px 100px minmax(170px, 1fr) 110px 90px 110px; gap: 10px 12px; align-items: end; }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field .pair { display: flex; gap: 6px; }
 .rform-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }

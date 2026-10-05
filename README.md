@@ -20,7 +20,8 @@ missing (it ships with Windows 10/11), the app starts the classic interface auto
 - **Trade** – buy, sell, short, cover or close the selected stock by percentage (1–100%, whole numbers,
   as the game rounds them). Shows the result the game reports (done / rejected + reason).
 - **Automation** – stop-loss, take-profit (fixed price or % from entry), trailing stop, limit buy,
-  limit short. Optional "confirm after N seconds" against short spikes. By default a rule fires once and
+  limit short, trailing buy / trailing short (follow the low / high and enter when the price turns by X %, optionally
+  only once the price has reached an activation level). Optional "confirm after N seconds" against short spikes. By default a rule fires once and
   disables itself; with **↻ Repeat** it stays active and fires again each time the price leaves the
   trigger zone and reaches it again. Cooldown / rate-limit rejections are retried automatically.
 - **Announced events** – the game announces pumps (~1 min ahead) and crashes (hours ahead). With the switches

@@ -967,8 +967,9 @@ class BotTrader:
             buy_free, short_free = now_s >= self._paper_next["buy"], now_s >= self._paper_next["short"]
 
         event_soon = self.event_guard(db, server_ms)
-        armed = {"buy" if r["kind"] == "buy_limit" else "short" for r in db.rules(True)
-                 if r["kind"] in ("buy_limit", "short_limit")}     # the game's cooldown is shared with the user's rules
+        from .automation import ENTRY_ACTION          # automation imports this module; import late to avoid a cycle
+        armed = {ENTRY_ACTION[r["kind"]] for r in db.rules(True)
+                 if r["kind"] in ENTRY_ACTION}                      # the game's cooldown is shared with the user's rules
         cd_left = {"buy": ((snap.get("next_buy_ms") or 0) - server_ms) / 1000, "short": ((snap.get("next_short_ms") or 0) - server_ms) / 1000}
         if s.paper:
             cd_left = {k: self._paper_next[k] - now_s for k in cd_left}

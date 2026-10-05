@@ -29,6 +29,7 @@
               <div class="field"><label>${esc(t("auto.side"))}</label><select class="in" data-f="side"></select></div>
               <div class="field"><label>${esc(t("auto.trigger"))}</label>
                 <div class="pair"><input class="in num" data-f="value" placeholder="0"><select class="in" data-f="mode"></select></div></div>
+              <div class="field"><label>${esc(t("auto.activation"))}</label><input class="in num" data-f="activation" placeholder="${esc(t("auto.activation_ph"))}"></div>
               <div class="field"><label>${esc(t("auto.amount_pct"))}</label><input class="in num" type="number" min="1" max="100" data-f="percent" value="100"></div>
               <div class="field"><label>${esc(t("auto.confirm_after"))}</label><input class="in num" type="number" min="0" data-f="confirm_s" value="0"></div>
             </div>
@@ -110,6 +111,7 @@
     return {
       stock_id: f("stock_id").value, kind: f("kind").value, side: f("side").value, mode: f("mode").value,
       value: f("value").value, percent: f("percent").value, confirm_s: f("confirm_s").value, repeat: f("repeat").checked,
+      activation: f("activation").disabled ? "" : f("activation").value,
     };
   }
 
@@ -118,7 +120,10 @@
     const kind = f("kind").value, exit = d.exit_kinds.includes(kind);
     f("side").disabled = !exit;
     const mode = f("mode");
-    if (kind === "trailing_stop") { fillSelect(mode, { pct: d.modes.trail }, "pct"); mode.disabled = true; }
+    const trailingEntry = d.trailing_entry.includes(kind);
+    f("activation").disabled = !trailingEntry;                  // only trailing buy / short have an activation price
+    if (kind === "trailing_stop" || kind === "trailing_short") { fillSelect(mode, { pct: d.modes.trail }, "pct"); mode.disabled = true; }
+    else if (kind === "trailing_buy") { fillSelect(mode, { pct: d.modes.trail_up }, "pct"); mode.disabled = true; }
     else if (exit) { fillSelect(mode, { pct: d.modes.pct, price: d.modes.price }); mode.disabled = false; }
     else { fillSelect(mode, { price: d.modes.price }, "price"); mode.disabled = true; }
   }
@@ -137,8 +142,12 @@
   function usePrice() {
     const price = S.data && S.data.prices[f("stock_id").value];
     if (price == null) return;
-    if (!f("mode").disabled) f("mode").value = "price";
-    f("value").value = plain(price, price >= 100 ? 2 : 4);
+    const text = plain(price, price >= 100 ? 2 : 4);
+    if (!f("activation").disabled) f("activation").value = text;   // trailing buy / short: the trigger is a %
+    else {
+      if (!f("mode").disabled) f("mode").value = "price";
+      f("value").value = text;
+    }
     onFormChange();
   }
 
@@ -159,6 +168,7 @@
     syncFormControls();
     if (!f("mode").disabled) f("mode").value = r.mode;
     f("value").value = r.value; f("percent").value = r.percent; f("confirm_s").value = r.confirm_s; f("repeat").checked = r.repeat;
+    f("activation").value = r.activation || "";
     q('[data-role="form-title"]').textContent = t("web.auto.edit_rule", { id });
     q('[data-role="save"]').textContent = t("auto.save");
     q('[data-role="cancel"]').classList.remove("hidden");
