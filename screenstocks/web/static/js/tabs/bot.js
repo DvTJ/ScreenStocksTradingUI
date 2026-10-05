@@ -18,7 +18,7 @@
   // ------------------------------------------------------------------ layout
   function mount(el) {
     S.el = el;
-    const info = (k) => `<span class="info" tabindex="0" role="note" data-tip="${esc(t(`bot.d.${k}`))}">i</span>`;
+    const info = (k) => `<span class="bot-tip" tabindex="0" role="note" data-tip="${esc(t(`bot.d.${k}`))}">i</span>`;
     const adv = (k, step) => `<label>${esc(t(`bot.p.${k}`))} ${info(k)}</label>
       <input class="in num" type="text" inputmode="decimal" data-f="${k}" data-step="${step}"><span class="tag" data-tag="${k}"></span>`;
     el.innerHTML = `
