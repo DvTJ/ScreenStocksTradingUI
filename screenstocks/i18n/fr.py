@@ -668,4 +668,8 @@ STRINGS = {
     'auto.help.trailing_buy': 'Achat suiveur : retient le cours le plus bas et achète {pct} % (du maximum possible) dès que le cours remonte du % indiqué. Avec « Actif à partir de », le suivi ne commence que lorsque le cours descend à ce prix ou en dessous.',
     'auto.help.trailing_short': 'Short suiveur : retient le cours le plus haut et vend à découvert {pct} % (du maximum possible) dès que le cours recule du % indiqué. Avec « Actif à partir de », le suivi ne commence que lorsque le cours monte à ce prix ou au-dessus.',
     'rule.st.wait_activation': 'attend que le cours atteigne {op} {price}',
+
+    # ---- start-up checks (2.1.3)
+    'app.already_running': "ScreenStocks Trading Bot est déjà ouvert avec cette base de données. Utilisez la fenêtre ouverte (voir la barre des tâches). Deux instances simultanées exécuteraient chaque règle d'automatisation deux fois.",
+    'app.db_error': "Impossible d'ouvrir la base de données :\n{error}\n\nL'application est-elle encore ouverte (barre des tâches, gestionnaire des tâches) ? Si la base se trouve dans un dossier cloud ou réseau, un dossier local aide (Paramètres → Base de données).",
 }

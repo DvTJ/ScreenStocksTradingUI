@@ -647,4 +647,8 @@ STRINGS = {
     'auto.help.trailing_buy': 'Trailing buy: remembers the lowest price and buys {pct}% (of the maximum possible) as soon as the price rises by the value in % from it. With “Active from” it only starts following once the price falls to/below that price.',
     'auto.help.trailing_short': 'Trailing short: remembers the highest price and shorts {pct}% (of the maximum possible) as soon as the price falls by the value in % from it. With “Active from” it only starts following once the price rises to/above that price.',
     'rule.st.wait_activation': 'waiting for the price to reach {op} {price}',
+
+    # ---- start-up checks (2.1.3)
+    'app.already_running': 'ScreenStocks Trading Bot is already running with this database. Please use the open window (check the taskbar). Two instances at once would run every automation rule twice.',
+    'app.db_error': 'The database could not be opened:\n{error}\n\nIs the app perhaps still running (taskbar, Task Manager)? If the database is in a cloud or network folder, a local folder helps (Settings → Database).',
 }

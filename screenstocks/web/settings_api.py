@@ -8,6 +8,7 @@ switched live (the page reloads), interface, folders and database need a restart
 import importlib.metadata
 import logging
 import platform
+import sqlite3
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -16,7 +17,7 @@ from typing import Optional
 import webview
 
 from .. import __version__, config, settings as settings_mod
-from ..i18n import LANGUAGES, get_language, set_language, texts
+from ..i18n import LANGUAGES, get_language, set_language, t, texts
 from ..storage import Storage
 
 log = logging.getLogger(__name__)
@@ -189,9 +190,14 @@ class SettingsApi:
         set_language(lang)
         return {"warning": warning}
 
-    def wizard_open(self) -> None:
-        """Start recording and automation, then show the app in the same window."""
-        self._open_app()
+    def wizard_open(self) -> dict:
+        """Start recording and automation, then show the app in the same window. {"error"} if that failed."""
+        try:
+            self._open_app()
+        except sqlite3.OperationalError as exc:
+            log.exception("opening the database after the wizard failed")
+            return {"error": t("app.db_error", error=exc)}
+        return {}
 
     def wizard_cancel(self) -> None:
         """First start: quit. Re-run via --setup: continue with the unchanged settings."""

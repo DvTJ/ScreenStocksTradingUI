@@ -16,6 +16,12 @@ from typing import Iterable, Optional
 
 from .reader import MarketSnapshot, PriceSample
 
+# Bump when SCHEMA or _migrate() gain something: a database below this version is prepared once
+# (tables, WAL mode, migrations); later opens do not write at all, so they never wait for a lock.
+SCHEMA_VERSION = 1
+BUSY_TIMEOUT_S = 30           # how long a connection waits for another one's write lock
+COMPACT_CHUNK = 20_000        # rows deleted per transaction when compacting (keeps the write lock short)
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stocks (
     stock_id         TEXT PRIMARY KEY,
@@ -175,17 +181,31 @@ class Storage:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
-        self.conn = sqlite3.connect(str(path), timeout=10, check_same_thread=not shared)
+        self.conn = sqlite3.connect(str(path), timeout=BUSY_TIMEOUT_S, check_same_thread=not shared)
+        deadline = time.time() + BUSY_TIMEOUT_S
+        while self.conn.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+            try:
+                self._prepare()
+            except sqlite3.OperationalError as exc:   # another connection is preparing the same new file
+                self.conn.rollback()
+                if "locked" not in str(exc) or time.time() > deadline:
+                    raise
+                time.sleep(0.2)
+        self.conn.execute("PRAGMA synchronous=NORMAL")      # per connection, needs no lock
+        self._pos_cache: Optional[dict] = None
+        self._prev_cash: Optional[tuple[int, float]] = None
+
+    def _prepare(self) -> None:
+        """New or older database: tables, WAL mode and migrations, once. main.py does this before any thread
+        starts; several connections doing it at the same time on a new file fail with "database is locked"."""
         self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.executescript(SCHEMA)
         # Rows stored by older versions used the bare (reused) id; the game re-exports
         # its last results, so they are simply rebuilt with the unique key.
         self.conn.execute("DELETE FROM command_results WHERE id NOT LIKE '%#%#%'")
         self._migrate()
+        self.conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         self.conn.commit()
-        self._pos_cache: Optional[dict] = None
-        self._prev_cash: Optional[tuple[int, float]] = None
 
     def _migrate(self) -> None:
         """Add columns introduced after a database was first created."""
@@ -647,7 +667,9 @@ class Storage:
             if key == last_key:
                 doomed.append((sid, last_tick))
             last_key, last_tick = key, tick
-        c.executemany("DELETE FROM prices WHERE stock_id=? AND tick=?", doomed)
+        for i in range(0, len(doomed), COMPACT_CHUNK):          # short transactions: other connections keep writing
+            c.executemany("DELETE FROM prices WHERE stock_id=? AND tick=?", doomed[i:i + COMPACT_CHUNK])
+            c.commit()
 
         doomed_snaps, last_bucket, last_id = [], None, None
         for sid_, ts in c.execute("SELECT id, server_ms FROM snapshots WHERE server_ms < ? ORDER BY server_ms, id",
@@ -656,8 +678,9 @@ class Storage:
             if bucket == last_bucket:
                 doomed_snaps.append((last_id,))
             last_bucket, last_id = bucket, sid_
-        c.executemany("DELETE FROM snapshots WHERE id=?", doomed_snaps)
-        c.commit()
+        for i in range(0, len(doomed_snaps), COMPACT_CHUNK):
+            c.executemany("DELETE FROM snapshots WHERE id=?", doomed_snaps[i:i + COMPACT_CHUNK])
+            c.commit()
         return len(doomed), len(doomed_snaps)
 
     def vacuum(self) -> None:

@@ -647,4 +647,8 @@ STRINGS = {
     'auto.help.trailing_buy': 'Trailing-Kauf: merkt sich den tiefsten Kurs und kauft {pct} % (des maximal Möglichen), sobald der Kurs um den Wert in % davon wieder steigt. Mit „Aktiv ab“ beginnt die Verfolgung erst, wenn der Kurs auf/unter diesen Preis fällt.',
     'auto.help.trailing_short': 'Trailing-Short: merkt sich den höchsten Kurs und shortet {pct} % (des maximal Möglichen), sobald der Kurs um den Wert in % davon wieder fällt. Mit „Aktiv ab“ beginnt die Verfolgung erst, wenn der Kurs auf/über diesen Preis steigt.',
     'rule.st.wait_activation': 'wartet, bis der Kurs {op} {price} erreicht',
+
+    # ---- start-up checks (2.1.3)
+    'app.already_running': 'ScreenStocks Trading Bot läuft bereits mit dieser Datenbank. Bitte das offene Fenster verwenden (ggf. in der Taskleiste). Zwei gleichzeitig laufende Instanzen würden jede Automatik-Regel doppelt ausführen.',
+    'app.db_error': 'Die Datenbank konnte nicht geöffnet werden:\n{error}\n\nLäuft die App vielleicht noch (Taskleiste, Task-Manager)? Liegt die Datenbank in einem Cloud- oder Netzwerkordner, hilft ein lokaler Ordner (Einstellungen → Datenbank).',
 }

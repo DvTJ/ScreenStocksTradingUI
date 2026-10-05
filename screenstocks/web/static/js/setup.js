@@ -70,7 +70,11 @@
       await SS.dialog({ title: t("setup.title"), body: t("setup.mods_write_failed", { error: res.warning }),
                         buttons: [{ label: "OK", value: true, kind: "primary" }] });
     }
-    await SS.call("wizard_open");             // starts recording and loads the app into this window
+    const opened = await SS.call("wizard_open");   // starts recording and loads the app into this window
+    if (opened && opened.error) {
+      await SS.dialog({ title: t("setup.title"), body: opened.error, buttons: [{ label: "OK", value: true, kind: "primary" }] });
+      $("btn-next").disabled = false;
+    }
   }
 
   SS.ready().then(async () => {

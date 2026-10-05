@@ -67,9 +67,11 @@ class Bridge(MarketApi, AutomationApi, BotApi, PortfolioApi, AnalysisApi, Settin
         self._engine.stop()
         self._collector.stop()
         with self._lock:
-            self._db.close()
+            if self._db is not None:          # None when opening the database failed
+                self._db.close()
         with self._slow_lock:
-            self._slow_db.close()
+            if self._slow_db is not None:
+                self._slow_db.close()
 
     def _open_app(self) -> None:
         """After the setup wizard: start the backend and load the app page into the same window."""
@@ -101,7 +103,7 @@ class Bridge(MarketApi, AutomationApi, BotApi, PortfolioApi, AnalysisApi, Settin
 
     def tick(self) -> dict:
         """Called by the page every second: header values, status bar and update state."""
-        if self._closing:
+        if self._closing or self._db is None:
             return {}
         with self._lock:
             db = self._db

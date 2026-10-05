@@ -7,15 +7,17 @@
 
 import argparse
 import logging
+import sqlite3
 import sys
 import time
 from pathlib import Path
 
-from screenstocks import __version__, settings as settings_mod
+from screenstocks import __version__, settings as settings_mod, single_instance
 from screenstocks.automation import AutomationEngine
 from screenstocks.collector import Collector
 from screenstocks.commands import CommandWriter
-from screenstocks.i18n import set_language, system_language
+from screenstocks.i18n import set_language, system_language, t
+from screenstocks.storage import Storage
 
 
 def setup_logging(verbose: bool) -> None:
@@ -50,6 +52,14 @@ def main() -> int:
     settings = settings_mod.load()
     set_language(args.lang or settings.language or system_language())
 
+    # one app per database: a second one would fight over the database lock and run every rule twice
+    lock_db = args.db or settings.db_file
+    if not single_instance.acquire(lock_db):
+        log.warning("another instance is already running on %s - exiting", lock_db)
+        if not args.headless:
+            _show_message(t("app.already_running"))
+        return 1
+
     need_setup = not args.headless and (args.setup or not settings.setup_done)
     ui = args.ui or settings.ui
     web_ok, web_reason = False, ""
@@ -68,6 +78,8 @@ def main() -> int:
             log.info("ScreenStocks Trading Bot %s – export: %s, db: %s", __version__, export_dir, db_path)
             if not export_dir.is_dir():
                 log.warning("export folder does not exist (yet): %s – waiting for it", export_dir)
+            # create / migrate the database here, before the threads below open their own connections
+            Storage(db_path).close()
             collector = Collector(export_dir, db_path)
             collector.start()
             # Stop-loss / take-profit / ... rules run in the background, also in headless mode.
@@ -100,7 +112,10 @@ def main() -> int:
             return 0  # wizard cancelled on first start
         set_language(args.lang or settings_mod.load().language or system_language())
 
-    collector, engine, db_path, export_dir = start_backend()
+    try:
+        collector, engine, db_path, export_dir = start_backend()
+    except sqlite3.OperationalError as exc:
+        return _database_failed(log, exc, args.headless)
 
     if args.headless:
         log.info("recording %s -> %s (Ctrl+C to stop)", export_dir, db_path)
@@ -119,9 +134,30 @@ def main() -> int:
         return 0
 
     from screenstocks.gui.app import run
-    run(collector, engine, db_path, export_dir)
+    try:
+        run(collector, engine, db_path, export_dir)
+    except sqlite3.OperationalError as exc:
+        engine.stop()
+        collector.stop()
+        return _database_failed(log, exc, args.headless)
     collector.join(timeout=2)
     return 0
+
+
+def _database_failed(log: logging.Logger, exc: Exception, headless: bool) -> int:
+    log.exception("database error")
+    if not headless:
+        _show_message(t("app.db_error", error=exc))
+    return 1
+
+
+def _show_message(text: str) -> None:
+    import tkinter as tk
+    from tkinter import messagebox
+    root = tk.Tk()
+    root.withdraw()
+    messagebox.showerror("ScreenStocks Trading Bot", text, parent=root)
+    root.destroy()
 
 
 def _show_web_fallback(reason: str) -> None:
