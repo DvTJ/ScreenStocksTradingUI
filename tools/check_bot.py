@@ -82,7 +82,7 @@ def check_volume_limit() -> None:
     assert bot.trade_money(10, 25, 1e6, 1e9, True) == 250000              # 25 % of the cash
     assert bot.trade_money(10, 100, 500, 1e6, True) == 500                # cash is the limit
     assert bot.trade_money(10, 100, 1e9, 40, True) == 400                 # few shares left
-    assert bot.trade_money(10, 100, 1e9, 40, False) == 1e9                # ... which a short ignores
+    assert bot.trade_money(10, 100, 1e9, 40, False) == 400                # ... and so is a short
     assert bot.trade_money(10, 100, 1e9, 0, True) == 0
     g = {"MR": noisy(0.04, 4000, 1)}
     per = {"MR": bot.calibrate(g, bot.BotSettings(level="medium", shorts=True))["MR"].params}

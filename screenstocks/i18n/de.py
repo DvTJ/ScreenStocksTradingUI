@@ -455,7 +455,7 @@ STRINGS = {
     'bot.experimental_title': 'Experimentelle Funktion',
     'bot.experimental_text': 'Der Bot ist noch in Entwicklung. Er sendet echte Aufträge an das Spiel und kann Geld verlieren: eine schlechte Phase kann einen großen Teil deines Cashs kosten. Beginne mit dem Übungsmodus (virtuelles Geld, keine Aufträge) und riskiere nur, was du verlieren kannst.',
     'bot.paper': 'Übungsmodus (virtuelles Geld)',
-    'bot.d.paper': 'Der Bot handelt live wie gewohnt, aber mit einem virtuellen Portemonnaie (eine Kopie deines Cashs beim Einschalten): kein Auftrag geht an das Spiel, dein echtes Geld bleibt unberührt. Ausführung zum aktuellen Preis mit Gebühren und ohne Verzögerung, echte Ergebnisse sind etwas schlechter. Positionen und Ergebnisse sind vom echten Handel getrennt.',
+    'bot.d.paper': 'Der Bot handelt live wie gewohnt, aber mit einem virtuellen Portemonnaie (eine Kopie deines Cashs beim Einschalten): kein Auftrag geht an das Spiel, dein echtes Geld bleibt unberührt. Ausführung zum aktuellen Preis mit Gebühren und ohne Verzögerung, echte Ergebnisse sind etwas schlechter. Positionen und Ergebnisse sind vom echten Handel getrennt. Nur die letzten 500 Trades werden gespeichert, danach zählen das virtuelle Portemonnaie und das Verlustlimit die ältesten nicht mehr: Practice neu starten (Zurücksetzen) für eine saubere Summe.',
     'bot.state.active_paper': 'Übung: virtuelles Geld, beobachtet {stocks}, {positions}',
     'bot.open_folder': 'Ordner öffnen',
     'bot.open_folder_ask': 'Den Ordner mit der Datei öffnen?',

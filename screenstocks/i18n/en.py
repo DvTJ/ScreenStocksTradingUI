@@ -455,7 +455,7 @@ STRINGS = {
     'bot.experimental_title': 'Experimental feature',
     'bot.experimental_text': 'The bot is still in development. It sends real orders to the game and can lose money: a bad stretch can cost a large part of your cash. Start with the practice mode (virtual money, no order sent) and only risk what you can afford to lose.',
     'bot.paper': 'Practice mode (virtual money)',
-    'bot.d.paper': 'The bot trades live as usual, but with a virtual wallet (a copy of your cash when you switch it on): no order is sent to the game and your real money is not used. Fills are at the current price with fees and without delay, so real results will be a bit worse. Positions and results are kept apart from real trading.',
+    'bot.d.paper': 'The bot trades live as usual, but with a virtual wallet (a copy of your cash when you switch it on): no order is sent to the game and your real money is not used. Fills are at the current price with fees and without delay, so real results will be a bit worse. Positions and results are kept apart from real trading. Only the last 500 trades are kept, so after that the virtual wallet and the loss limit no longer count the oldest ones: restart the practice (reset) for a clean total.',
     'bot.state.active_paper': 'Practice: virtual money, watching {stocks}, {positions}',
     'bot.open_folder': 'Show in folder',
     'bot.open_folder_ask': 'Open the folder containing the file?',
