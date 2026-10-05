@@ -476,7 +476,7 @@ STRINGS = {
     'bot.experimental_title': 'Fonction expérimentale',
     'bot.experimental_text': "Le bot est encore en développement. Il envoie de vrais ordres dans le jeu et peut faire perdre de l'argent : une mauvaise période peut coûter une grande partie de votre cash. Commencez par le mode entraînement (argent virtuel, aucun ordre envoyé) et ne risquez que ce que vous pouvez perdre.",
     'bot.paper': 'Mode entraînement (argent virtuel)',
-    'bot.d.paper': "Le bot trade en direct comme d'habitude, mais avec un portefeuille virtuel (une copie de votre cash à l'activation) : aucun ordre n'est envoyé au jeu et votre argent réel n'est pas utilisé. Les exécutions se font au prix courant, avec frais et sans délai : les résultats réels seront un peu moins bons. Positions et résultats sont séparés du trading réel.",
+    'bot.d.paper': "Le bot trade en direct comme d'habitude, mais avec un portefeuille virtuel (une copie de votre cash à l'activation) : aucun ordre n'est envoyé au jeu et votre argent réel n'est pas utilisé. Les exécutions se font au prix courant, avec frais et sans délai : les résultats réels seront un peu moins bons. Positions et résultats sont séparés du trading réel. Seuls les 500 derniers trades sont conservés : au-delà, le portefeuille virtuel et la limite de perte ne comptent plus les plus anciens ; relancez le practice (remise à zéro) pour un total propre.",
     'bot.state.active_paper': 'Entraînement : argent virtuel, surveille {stocks}, {positions}',
     'bot.open_folder': 'Ouvrir le dossier',
     'bot.open_folder_ask': 'Ouvrir le dossier contenant le fichier ?',

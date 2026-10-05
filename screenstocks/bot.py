@@ -208,9 +208,10 @@ def stake_pct(trade_pct: int, z: float, p: Params, cash: float, free: float, pri
 
 def trade_money(price: float, pct: float, cash: float, available, buying: bool) -> float:
     """Money one order moves. The game takes pct % of the largest amount it allows: all the cash can
-    be used (one $PLAIN order was 9.5 M shares), a buy is also limited by the shares still available."""
+    be used (one $PLAIN order was 9.5 M shares), an order (buy or short) is also limited by the shares still available: without it
+    a short stake compounds with the cash far beyond what the market holds."""
     cap = cash / price if price > 0 else 0.0
-    if buying and available is not None:
+    if available is not None:
         cap = min(cap, available)
     return max(0.0, pct / 100 * cap) * price
 
@@ -991,14 +992,14 @@ class BotTrader:
         for sid, action, reason, z in st.orders(now_s, prices, held, buy_free, short_free, blocked):
             if reason == "entry" and event_soon:             # keep the cooldowns free for the event trader
                 continue
-            if action == "buy" and sid in no_stock:
+            if reason == "entry" and sid in no_stock:          # a buy or a short needs shares still available
                 continue
             if reason == "entry" and action in armed:          # keep the cooldown free for the user's own limit rule
                 continue
             if reason == "entry" and self.loss_limit_hit:      # closing positions stays allowed
                 continue
-            if reason == "entry":
-                self._decision(db, s, held, sid, action, prices[sid], z, now_s, stocks[sid], snap)
+            if reason == "entry" and not self._decision(db, s, held, sid, action, prices[sid], z, now_s, stocks[sid], snap):
+                continue                                       # over the risk budget: nothing to announce, nothing to send
             if s.paper:
                 self._paper_trade(db, s, held, sid, action, reason, prices[sid], z, now_s, stocks[sid], snap)
                 return                                # one command per step, as live
@@ -1010,16 +1011,20 @@ class BotTrader:
                 return                                # one command per step; the writer rate-limits anyway
 
     def _decision(self, db: Storage, s: BotSettings, held: dict, sid: str, action: str, price: float, z: float,
-                  now_s: float, stock: dict, snap: dict) -> None:
-        """Log why an entry is taken: the signal, the expected move and the stake."""
+                  now_s: float, stock: dict, snap: dict) -> bool:
+        """Log why an entry is taken: the signal, the expected move and the stake. False (nothing logged) when the
+        risk budget leaves no stake."""
         st, buying = self.strategy, action == "buy"
         fair, p = st.fair[sid], st.p(sid)
         edge = (fair / price - 1) * 100 if buying else (price / fair - 1) * 100
         cash, free = paper_wallet(load_results(db), held) if s.paper else (snap.get("cash") or 0,) * 2
         pct = stake_pct(s.trade_pct, z, p, cash, free, price, stock["available_shares"], buying)
+        if pct < 1:
+            return False
         waited = round(now_s - st._since.get(sid, (None, now_s))[1] + 1)
         self._say(sid, f"enter_{action}", now_s, force=True, z=f"{z:+.1f}", waited=waited, edge=f"{edge:.1f}", pct=pct,
                   jump=f"{p.jump_pct:g}")
+        return True
 
     @staticmethod
     def _event_args(ev: dict) -> dict:

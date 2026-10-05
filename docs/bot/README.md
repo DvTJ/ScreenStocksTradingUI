@@ -35,7 +35,7 @@ A stock is a candidate when **all** of these hold:
 | **Confirmation** | the distance has lasted ≥ `confirm_s` seconds | same |
 | Expected gain | `(average / price − 1) ≥ min_edge_pct` | `(price / average − 1) ≥ min_edge_pct` |
 | Game cooldown | buy cooldown is over | short cooldown is over |
-| Context | no foreign position, no announced pump/crash, stock unlocked, shares available (buy only) | same, except shares |
+| Context | no foreign position, no announced pump/crash, stock unlocked, shares available | same |
 | Pause | the stock is not paused (see 2.5) | same |
 | Room | fewer than `max_positions` positions open | same |
 | Selection | the stock is among the best ones (see 3) and not excluded | same |
@@ -60,7 +60,8 @@ it **never exceeds** the chosen percentage. On top of that comes a **risk budget
 stop-loss, with 50 % of slippage (prices jump past the stop), costs at most `max_loss_pct` % of your cash. Risky
 trades stay possible, but one bad trade can no longer take a large part of your money. The bot sends the
 resulting percentage to the game, which works out the amount itself: *pct % of the maximum allowed*, i.e. your
-cash and, for a buy, the shares still available.
+cash and the shares still available, for a buy **and for a short** (without that cap a simulated short stake grew with the
+compounding cash to absurd sizes, e.g. 810 000 bn on `$WAVE`).
 
 ### 2.4 Exit (no cooldown, checked before any entry)
 
@@ -129,7 +130,7 @@ The calibration still tries `tau_s` 60 / 120 / 240 and `entry_z` base − 0.5 �
 The "Test on history" button runs a **walk-forward test**. The bot learns on the history *before* the tested
 period (3 h at most), then trades that period (15 min, 30 min, 1 h, 3 h, 6 h, 24 h or "all" = the second half). The
 simulation applies the cooldown, the 2 s latency, the 0.3 % fee and the game's real stake rule (your cash or the
-starting money you type in; shares available for buys). The detail window lists every trade with its time and
+starting money you type in; shares available for buys and shorts). The detail window lists every trade with its time and
 gives the totals per stock and for the last 15 min / 30 min / 1 h / 3 h / 6 h.
 
 **Known limits**, to keep in mind when reading a result:
@@ -340,7 +341,7 @@ cooldown is separate; a stock is never long and short at once (0 such rows in `p
 0.2 to 0.3 s and one at a time. The simulation and the practice mode now also send **one command per second** (the other
 signals are re-evaluated the next second), as the live bot does. Balanced, `$PLAIN`, 3 h: +184 → +176 % normal, +64 → +64 %
 stressed (worst window +29 → +13 %). Not modelled: refused orders (108 of 214 logged commands failed with `no-volume`,
-i.e. no shares available at that moment; the practice mode does skip buys when none are available).
+i.e. no shares available at that moment; the practice mode and the live bot skip entries when none are available).
 
 ## 9. Checking the code
 
