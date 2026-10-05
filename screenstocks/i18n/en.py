@@ -633,4 +633,18 @@ STRINGS = {
     'about.runtime': 'Runtime: Python {python} (PSF licence) · Rendering: Microsoft Edge WebView2',
     'about.tradingview': 'The charts use TradingView Lightweight Charts™ – © TradingView, Inc., licensed under Apache-2.0. The TradingView logo is hidden in the charts; this notice and link replace it.',
     'about.tradingview_link': 'Open tradingview.com',
+
+    # ---- trailing buy / short (2.1)
+    'kind.trailing_buy': 'Trailing buy',
+    'kind.trailing_short': 'Trailing short',
+    'mode.trail_up': '% rebound',
+    'trigger.trail_buy': '+{v}% from the low',
+    'trigger.trail_short': '−{v}% from the high',
+    'trigger.activation': 'active from {op} {price}',
+    'auto.activation': 'Active from (price)',
+    'auto.activation_ph': 'optional',
+    'auto.invalid_activation': 'The activation price is invalid (leave it empty or enter a price above 0).',
+    'auto.help.trailing_buy': 'Trailing buy: remembers the lowest price and buys {pct}% (of the maximum possible) as soon as the price rises by the value in % from it. With “Active from” it only starts following once the price falls to/below that price.',
+    'auto.help.trailing_short': 'Trailing short: remembers the highest price and shorts {pct}% (of the maximum possible) as soon as the price falls by the value in % from it. With “Active from” it only starts following once the price rises to/above that price.',
+    'rule.st.wait_activation': 'waiting for the price to reach {op} {price}',
 }

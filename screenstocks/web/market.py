@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Optional
 
 from .. import config, settings as settings_mod
-from ..automation import kind_name, trigger_price
+from ..automation import TRAILING_ENTRY, activation_op, kind_name, trigger_price
 from ..commands import ACTIONS, action_label, action_name, normalize_percent, reason_text, status_text
+from ..gui import fmt as pyfmt
 from ..i18n import t
 
 RANGES = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "6h": 21600, "24h": 86400, "all": None}
@@ -134,6 +135,10 @@ class MarketApi:
                     trig = trigger_price(rule, pos)
                     if trig:
                         lines.append(dict(price=trig, kind=rule["kind"], title=f"{kind_name(rule['kind'])} #{rule['id']}"))
+                    elif rule["kind"] in TRAILING_ENTRY and rule["activation"]:   # not following yet: where it starts
+                        lines.append(dict(price=rule["activation"], kind=rule["kind"],
+                                          title=f"{kind_name(rule['kind'])} #{rule['id']} · " + t(
+                                              "trigger.activation", op=activation_op(rule), price=pyfmt.price(rule["activation"]))))
             snap = db.latest_snapshot() or {}
             now = snap.get("server_ms") or end
             events = []

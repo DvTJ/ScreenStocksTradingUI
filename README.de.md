@@ -20,7 +20,8 @@ erhalten: umschalten unter **⚙ Einstellungen → Allgemein → Oberfläche**. 
 - **Handeln** – Kaufen, Verkaufen, Shorten, Covern oder Schließen der gewählten Aktie in Prozent
   (1–100 %, ganze Zahlen, da das Spiel rundet). Zeigt die Rückmeldung des Spiels (ausgeführt / abgelehnt + Grund).
 - **Automatik** – Stop-Loss, Take-Profit (fester Preis oder % vom Einstieg), Trailing-Stop, Limit-Kauf,
-  Limit-Short. Optional „Bestätigen nach N Sekunden“ gegen kurze Ausreißer. Standardmäßig löst eine Regel
+  Limit-Short, Trailing-Kauf / Trailing-Short (folgen dem Tief / Hoch und steigen ein, wenn der Kurs um X % dreht;
+  optional erst ab einem Aktivierungskurs). Optional „Bestätigen nach N Sekunden“ gegen kurze Ausreißer. Standardmäßig löst eine Regel
   einmal aus und deaktiviert sich; mit **↻ Wiederholen** bleibt sie aktiv und löst jedes Mal erneut aus,
   wenn der Kurs den Auslösebereich verlassen und wieder erreicht hat. Bei Cooldown/Rate-Limit wird automatisch
   erneut versucht.

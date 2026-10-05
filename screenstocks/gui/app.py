@@ -14,7 +14,8 @@ import webbrowser
 from .. import __version__, config, config_io, settings as settings_mod, updater
 from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, AutomationEngine, condition_met,
                           describe_trigger, has_position, kind_name, mode_name, needs_position, side_name,
-                          status_display, status_msg, trigger_price)
+                          status_display, status_msg, trigger_price, TRAILING_ENTRY, activation_op,
+                          activation_reached)
 from ..collector import Collector, CollectorStatus
 from ..events import EventSettings, load_settings as load_event_settings, save_settings as save_event_settings
 from ..commands import ACTIONS, CommandWriter, action_label, action_name, normalize_percent, reason_text, status_text
@@ -36,6 +37,8 @@ RULE_COLORS = {
     "trailing_stop": "#f0883e",
     "buy_limit": "#56d4dd",
     "short_limit": "#d2a8ff",
+    "trailing_buy": "#7ee787",
+    "trailing_short": "#ff7b72",
 }
 
 
@@ -511,6 +514,10 @@ class MarketTab(ttk.Frame):
                 if trig:
                     hlines.append(HLine(trig, RULE_COLORS[rule["kind"]],
                                         f"{kind_name(rule['kind'])} #{rule['id']}"))
+                elif rule["kind"] in TRAILING_ENTRY and rule["activation"]:     # not following yet: show where it starts
+                    hlines.append(HLine(rule["activation"], RULE_COLORS[rule["kind"]],
+                                        f"{kind_name(rule['kind'])} #{rule['id']} · "
+                                        + t("trigger.activation", op=activation_op(rule), price=fmt.price(rule["activation"]))))
         if pos and pos["shares_owned"]:
             hlines.append(HLine(pos["avg_buy_price"], THEME["accent"], t("common.avg_buy")))
         if pos and pos["shares_shorted"]:
@@ -961,6 +968,7 @@ class AutomationTab(ttk.Frame):
         self.pct_var = tk.StringVar(value="100")
         self.confirm_var = tk.StringVar(value="0")
         self.repeat_var = tk.BooleanVar(value=False)
+        self.act_var = tk.StringVar()          # trailing buy / short: activation price (optional)
         self._editing: Optional[int] = None
 
         def field(col, title, widget):
@@ -982,29 +990,30 @@ class AutomationTab(ttk.Frame):
         self.value_label = ttk.Label(form, text=t("auto.trigger"), style="CardMuted.TLabel")
         self.value_label.grid(row=0, column=3, sticky="w", padx=(0, 10))
         vf.grid(row=1, column=3, sticky="w", padx=(0, 10))
-        field(4, t("auto.amount_pct"), tk.Spinbox(form, from_=1, to=100, width=5, textvariable=self.pct_var, justify="right",
+        self.act_entry = field(4, t("auto.activation"), ttk.Entry(form, textvariable=self.act_var, width=9, justify="right"))
+        field(5, t("auto.amount_pct"), tk.Spinbox(form, from_=1, to=100, width=5, textvariable=self.pct_var, justify="right",
                                        bg=THEME["panel"], fg=THEME["fg"], buttonbackground=THEME["panel_alt"],
                                        insertbackground=THEME["fg"], relief="flat"))
-        field(5, t("auto.confirm_after"), tk.Spinbox(form, from_=0, to=600, width=5, textvariable=self.confirm_var,
+        field(6, t("auto.confirm_after"), tk.Spinbox(form, from_=0, to=600, width=5, textvariable=self.confirm_var,
                                                    justify="right", bg=THEME["panel"], fg=THEME["fg"],
                                                    buttonbackground=THEME["panel_alt"], insertbackground=THEME["fg"],
                                                    relief="flat"))
         tk.Checkbutton(form, text="↻ " + t("auto.repeat"), variable=self.repeat_var,
                        bg=THEME["panel_alt"], fg=THEME["fg"], selectcolor=THEME["panel"],
                        activebackground=THEME["panel_alt"], activeforeground=THEME["fg"],
-                       font=THEME["font_bold"], highlightthickness=0, bd=0).grid(row=1, column=6, padx=(0, 12))
-        ttk.Button(form, text=t("auto.use_price"), command=self._use_price).grid(row=1, column=7, padx=(0, 6))
+                       font=THEME["font_bold"], highlightthickness=0, bd=0).grid(row=1, column=7, padx=(0, 12))
+        ttk.Button(form, text=t("auto.use_price"), command=self._use_price).grid(row=1, column=8, padx=(0, 6))
         self.add_btn = tk.Button(form, text=t("auto.add"), command=self._add_rule, bg=THEME["accent"], fg="#0d1117",
                                  activebackground=blend(THEME["accent"], "#ffffff", 0.8), font=THEME["font_bold"],
                                  relief="flat", bd=0, padx=12, pady=3, cursor="hand2")
-        self.add_btn.grid(row=1, column=8)
+        self.add_btn.grid(row=1, column=9)
         self.cancel_btn = ttk.Button(form, text=t("auto.cancel_edit"), command=self._cancel_edit)
-        self.cancel_btn.grid(row=1, column=9, padx=(6, 0))
+        self.cancel_btn.grid(row=1, column=10, padx=(6, 0))
         self.cancel_btn.grid_remove()
         self.help = ttk.Label(form, text="", style="CardMuted.TLabel", wraplength=1100, justify="left")
-        self.help.grid(row=2, column=0, columnspan=10, sticky="w", pady=(6, 0))
+        self.help.grid(row=2, column=0, columnspan=11, sticky="w", pady=(6, 0))
         for var in (self.kind_var, self.side_var, self.mode_var, self.pct_var, self.value_var, self.stock_var,
-                    self.repeat_var):
+                    self.repeat_var, self.act_var):
             var.trace_add("write", lambda *_: self._update_form())
 
         # ---- rules + log
@@ -1057,14 +1066,18 @@ class AutomationTab(ttk.Frame):
             value = float(self.value_var.get().replace(",", "."))
             pct = normalize_percent(float(self.pct_var.get().replace(",", ".")))
             confirm = max(0.0, float(self.confirm_var.get().replace(",", ".")))
+            kind = self._key(KIND_KEYS, kind_name, self.kind_var.get())
+            act_text = self.act_var.get().strip()
+            activation = float(act_text.replace(",", ".")) if kind in TRAILING_ENTRY and act_text else None
         except ValueError:
             return None
-        kind = self._key(KIND_KEYS, kind_name, self.kind_var.get())
         mode = "price" if kind in ("buy_limit", "short_limit") else \
-            "pct" if kind == "trailing_stop" else self._key(MODE_KEYS, mode_name, self.mode_var.get())
-        return dict(id=0, stock_id=self.stock_var.get(), kind=kind, side=self._key(SIDE_KEYS, side_name, self.side_var.get()),
+            "pct" if kind in ("trailing_stop", *TRAILING_ENTRY) else self._key(MODE_KEYS, mode_name, self.mode_var.get())
+        side = ({"trailing_buy": "long", "trailing_short": "short"}.get(kind)
+                or self._key(SIDE_KEYS, side_name, self.side_var.get()))
+        return dict(id=0, stock_id=self.stock_var.get(), kind=kind, side=side,
                     mode=mode, value=value, percent=pct, confirm_s=confirm, extreme=None,
-                    repeat=int(self.repeat_var.get()), runs=0)
+                    repeat=int(self.repeat_var.get()), runs=0, activation=activation)
 
     def _edit_rule(self) -> None:
         rid = self._selected_rule_id()
@@ -1080,6 +1093,7 @@ class AutomationTab(ttk.Frame):
         self.pct_var.set(str(r["percent"]))
         self.confirm_var.set(f"{r['confirm_s']:g}")
         self.repeat_var.set(bool(r["repeat"]))
+        self.act_var.set(f"{r['activation']:g}".replace(".", fmt.decimal_sep()) if r["activation"] else "")
         self.add_btn.configure(text=t("auto.save"))
         self.cancel_btn.grid()
 
@@ -1094,10 +1108,12 @@ class AutomationTab(ttk.Frame):
         exit_rule = kind in EXIT_KINDS
         self.side_cb.configure(state="readonly" if exit_rule else "disabled")
         trail, modes = t("mode.trail"), [mode_name(k) for k in MODE_KEYS]
-        if kind == "trailing_stop":
-            self.mode_cb.configure(state="disabled", values=[trail])
-            if self.mode_var.get() != trail:
-                self.mode_var.set(trail)
+        self.act_entry.configure(state="normal" if kind in TRAILING_ENTRY else "disabled")
+        if kind in ("trailing_stop", *TRAILING_ENTRY):
+            label = t("mode.trail_up") if kind == "trailing_buy" else trail
+            self.mode_cb.configure(state="disabled", values=[label])
+            if self.mode_var.get() != label:
+                self.mode_var.set(label)
         elif exit_rule:
             self.mode_cb.configure(state="readonly", values=modes)
             if self.mode_var.get() not in modes:
@@ -1113,7 +1129,7 @@ class AutomationTab(ttk.Frame):
         if rule and self._ctx and rule["stock_id"]:
             pos = self._ctx.positions.get(rule["stock_id"])
             last = self._ctx.last_prices.get(rule["stock_id"])
-            if kind == "trailing_stop" and last:
+            if last and (kind == "trailing_stop" or (kind in TRAILING_ENTRY and activation_reached(rule, last[1]))):
                 rule["extreme"] = last[1]
             trig = trigger_price(rule, pos)
             text += "\n" + t("auto.current_trigger", trigger=describe_trigger(rule, trig, fmt.price, fmt.decimal_sep()))
@@ -1127,8 +1143,12 @@ class AutomationTab(ttk.Frame):
     def _use_price(self) -> None:
         last = self._ctx.last_prices.get(self.stock_var.get()) if self._ctx else None
         if last:
+            text = f"{last[1]:.4f}".rstrip("0").rstrip(".").replace(".", fmt.decimal_sep())
+            if self._key(KIND_KEYS, kind_name, self.kind_var.get()) in TRAILING_ENTRY:
+                self.act_var.set(text)              # trailing buy / short: the trigger is a %, the price is the activation
+                return
             self.mode_var.set(mode_name("price"))
-            self.value_var.set(f"{last[1]:.4f}".rstrip("0").rstrip(".").replace(".", fmt.decimal_sep()))
+            self.value_var.set(text)
 
     def _add_rule(self) -> None:
         rule = self._form_rule()
@@ -1138,10 +1158,15 @@ class AutomationTab(ttk.Frame):
         if rule["value"] <= 0 or (rule["mode"] == "pct" and rule["value"] >= 100 and rule["kind"] != "take_profit"):
             messagebox.showwarning(t("auto.rule_title"), t("auto.invalid_value"), parent=self)
             return
+        if rule["activation"] is not None and rule["activation"] <= 0:
+            messagebox.showwarning(t("auto.rule_title"), t("auto.invalid_activation"), parent=self)
+            return
         ctx = self._ctx
         last = ctx.last_prices.get(rule["stock_id"]) if ctx else None
         pos = ctx.positions.get(rule["stock_id"]) if ctx else None
-        probe = dict(rule, extreme=last[1] if last and rule["kind"] == "trailing_stop" else None)
+        follows = last and (rule["kind"] == "trailing_stop"
+                            or (rule["kind"] in TRAILING_ENTRY and activation_reached(rule, last[1])))
+        probe = dict(rule, extreme=last[1] if follows else None)
         trig = trigger_price(probe, pos)
         if last and trig and condition_met(probe, last[1], trig) and \
                 (not needs_position(rule) or has_position(rule, pos)) and not messagebox.askyesno(
@@ -1151,7 +1176,8 @@ class AutomationTab(ttk.Frame):
             rid = self._editing
             ctx.db.update_rule(rid, stock_id=rule["stock_id"], kind=rule["kind"], side=rule["side"], mode=rule["mode"],
                                value=rule["value"], percent=rule["percent"], confirm_s=rule["confirm_s"],
-                               repeat=rule["repeat"], extreme=None, status=status_msg("rule.st.active"))
+                               repeat=rule["repeat"], activation=rule["activation"], extreme=None,
+                               status=status_msg("rule.st.active"))
             ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                             t("rule.log.edited", kind=kind_name(rule["kind"]),
                               trigger=describe_trigger(rule, None, fmt.price, fmt.decimal_sep()), p=rule["percent"],
@@ -1161,7 +1187,8 @@ class AutomationTab(ttk.Frame):
             return
         rid = ctx.db.add_rule(rule["stock_id"], rule["kind"], rule["side"], rule["mode"], rule["value"],
                               rule["percent"], rule["confirm_s"], int(time.time() * 1000),
-                              repeat=bool(rule["repeat"]), status=status_msg("rule.st.active"))
+                              repeat=bool(rule["repeat"]), status=status_msg("rule.st.active"),
+                              activation=rule["activation"])
         ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                         t("rule.log.created", kind=kind_name(rule["kind"]),
                           side=side_name(rule["side"]) if rule["kind"] in EXIT_KINDS else "",

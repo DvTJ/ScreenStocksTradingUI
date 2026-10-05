@@ -122,7 +122,8 @@ CREATE TABLE IF NOT EXISTS rules (
     created_ms   INTEGER,
     triggered_ms INTEGER,
     repeat       INTEGER NOT NULL DEFAULT 0,
-    runs         INTEGER NOT NULL DEFAULT 0
+    runs         INTEGER NOT NULL DEFAULT 0,
+    activation   REAL                -- trailing buy / short: start following the price only past this level
 );
 
 CREATE TABLE IF NOT EXISTS rule_log (
@@ -193,6 +194,8 @@ class Storage:
             self.conn.execute("ALTER TABLE rules ADD COLUMN repeat INTEGER NOT NULL DEFAULT 0")
         if "runs" not in rule_cols:
             self.conn.execute("ALTER TABLE rules ADD COLUMN runs INTEGER NOT NULL DEFAULT 0")
+        if "activation" not in rule_cols:
+            self.conn.execute("ALTER TABLE rules ADD COLUMN activation REAL")
 
     def close(self) -> None:
         self.conn.close()
@@ -686,18 +689,18 @@ class Storage:
 
     def add_rule(self, stock_id: str, kind: str, side: str, mode: str, value: float,
                  percent: int, confirm_s: float, created_ms: int, repeat: bool = False,
-                 status: str = "") -> int:
+                 status: str = "", activation: Optional[float] = None) -> int:
         cur = self.conn.execute(
             """INSERT INTO rules (stock_id, kind, side, mode, value, percent, confirm_s, enabled, status,
-                                   created_ms, repeat)
-               VALUES (?,?,?,?,?,?,?,1,?,?,?)""",
-            (stock_id, kind, side, mode, value, percent, confirm_s, status, created_ms, int(repeat)))
+                                   created_ms, repeat, activation)
+               VALUES (?,?,?,?,?,?,?,1,?,?,?,?)""",
+            (stock_id, kind, side, mode, value, percent, confirm_s, status, created_ms, int(repeat), activation))
         self.conn.commit()
         return cur.lastrowid
 
     def update_rule(self, rule_id: int, **fields) -> None:
         allowed = {"enabled", "extreme", "status", "triggered_ms", "repeat", "runs",
-                   "stock_id", "kind", "side", "mode", "value", "percent", "confirm_s"}
+                   "stock_id", "kind", "side", "mode", "value", "percent", "confirm_s", "activation"}
         assert set(fields) <= allowed, fields
         sets = ", ".join(f"{k}=?" for k in fields)
         self.conn.execute(f"UPDATE rules SET {sets} WHERE id=?", (*fields.values(), rule_id))

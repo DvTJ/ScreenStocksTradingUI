@@ -8,6 +8,7 @@
   const LINE_COLORS = {
     avg_buy: "#58a6ff", avg_short: "#d2a8ff", event: "#d29922", stop_loss: "#f85149", take_profit: "#3fb950",
     trailing_stop: "#f0883e", buy_limit: "#56d4dd", short_limit: "#d2a8ff",
+    trailing_buy: "#7ee787", trailing_short: "#ff7b72",
   };
   const DETAIL_TARGET = 2000;       // load full detail when fewer than this many points are visible
 

@@ -24,12 +24,16 @@ from .storage import Storage
 
 log = logging.getLogger(__name__)
 
-KIND_KEYS = ("stop_loss", "take_profit", "trailing_stop", "buy_limit", "short_limit")
+KIND_KEYS = ("stop_loss", "take_profit", "trailing_stop", "buy_limit", "short_limit", "trailing_buy", "trailing_short")
 SIDE_KEYS = ("long", "short")
 MODE_KEYS = ("price", "pct")
 
-# Exit rules act on an existing position; limit rules open one.
+# Exit rules act on an existing position; limit and trailing entry rules open one.
 EXIT_KINDS = ("stop_loss", "take_profit", "trailing_stop")
+# Trailing entries follow the lowest (buy) / highest (short) price and enter when the price turns by value %.
+TRAILING_ENTRY = ("trailing_buy", "trailing_short")
+# Entry rules use the game's buy / short cooldown (shared by all stocks).
+ENTRY_ACTION = {"buy_limit": "buy", "trailing_buy": "buy", "short_limit": "short", "trailing_short": "short"}
 
 # Rejections worth retrying instead of giving up on the rule.
 RETRY_REASONS = {"cooldown", "rate-limited", "queue-full", "not-ready", "held"}
@@ -53,7 +57,7 @@ def mode_name(mode: str) -> str:
 def rule_action(rule: dict) -> str:
     if rule["kind"] in EXIT_KINDS:
         return "sell" if rule["side"] == "long" else "cover"
-    return "buy" if rule["kind"] == "buy_limit" else "short"
+    return ENTRY_ACTION[rule["kind"]]
 
 
 def needs_position(rule: dict) -> bool:
@@ -71,6 +75,11 @@ def trigger_price(rule: dict, pos: Optional[dict]) -> Optional[float]:
     long_ = side == "long"
     if kind in ("buy_limit", "short_limit"):
         return v
+    if kind in TRAILING_ENTRY:
+        ext = rule.get("extreme")
+        if not ext:
+            return None                     # not following yet (activation price not reached)
+        return ext * (1 + v / 100) if kind == "trailing_buy" else ext * (1 - v / 100)
     if kind == "trailing_stop":
         ext = rule.get("extreme")
         if not ext:
@@ -93,6 +102,8 @@ def triggers_below(rule: dict) -> bool:
         return True
     if kind == "short_limit":
         return False
+    if kind in TRAILING_ENTRY:
+        return kind == "trailing_short"     # buy on the way up from the low, short on the way down from the high
     if kind == "take_profit":
         return not long_
     return long_  # stop-loss / trailing stop
@@ -102,10 +113,26 @@ def condition_met(rule: dict, price: float, trig: float) -> bool:
     return price <= trig if triggers_below(rule) else price >= trig
 
 
+def activation_op(rule: dict) -> str:
+    """Trailing buy waits for the price to fall to the activation level, trailing short for it to rise there."""
+    return "≤" if rule["kind"] == "trailing_buy" else "≥"
+
+
+def activation_reached(rule: dict, price: float) -> bool:
+    act = rule.get("activation")
+    return not act or (price <= act if rule["kind"] == "trailing_buy" else price >= act)
+
+
 def describe_trigger(rule: dict, trig: Optional[float], fmt_price, decimal_sep: str = ".") -> str:
     op = "≤" if triggers_below(rule) else "≥"
     v = f"{rule['value']:g}".replace(".", decimal_sep)
     suffix = f" ({op} {fmt_price(trig)})" if trig else ""
+    if rule["kind"] in TRAILING_ENTRY:
+        text = t("trigger.trail_buy" if rule["kind"] == "trailing_buy" else "trigger.trail_short", v=v) + suffix
+        act = rule.get("activation")
+        if act:
+            text += " · " + t("trigger.activation", op=activation_op(rule), price=fmt_price(act))
+        return text
     if rule["kind"] == "trailing_stop":
         base = t("trigger.trail_high") if rule["side"] == "long" else t("trigger.trail_low")
         return t("trigger.trail", v=v, base=base) + suffix
@@ -118,7 +145,12 @@ def describe_trigger(rule: dict, trig: Optional[float], fmt_price, decimal_sep: 
 # ---------------------------------------------------------------- rule status
 # The status is stored as key + raw values ({"k": "rule.st.…", "v": {...}}) and translated when it is
 # shown, so it follows the current language. Reason/status codes of the game are translated, too.
-_STATUS_CONVERT = {"reason": reason_text, "status": status_text}
+def _price_text(v: str) -> str:
+    from .gui import fmt                    # formats in the language the status is shown in
+    return fmt.price(float(v))
+
+
+_STATUS_CONVERT = {"reason": reason_text, "status": status_text, "price": _price_text}
 
 
 def status_msg(key: str, **values) -> str:
@@ -221,6 +253,21 @@ class AutomationEngine(threading.Thread):
 
     # ------------------------------------------------------------------ helpers
 
+    @staticmethod
+    def _follow(db: Storage, rule: dict, price: float) -> bool:
+        """Trailing entry: keep the lowest (buy) / highest (short) price since following started.
+        Following starts once the activation price is reached (at once without one). False while waiting for it."""
+        ext = rule["extreme"]
+        if ext is None:
+            if not activation_reached(rule, price):
+                return False
+            rule["extreme"] = price
+            db.update_rule(rule["id"], extreme=price)
+        elif price < ext if rule["kind"] == "trailing_buy" else price > ext:
+            rule["extreme"] = price
+            db.update_rule(rule["id"], extreme=price)
+        return True
+
     def _set_status(self, db: Storage, rule: dict, status: str) -> None:
         if self._status.get(rule["id"]) != status:
             self._status[rule["id"]] = status
@@ -289,8 +336,20 @@ class AutomationEngine(threading.Thread):
                 if rule["repeat"] and rule["runs"]:
                     # after a restart, an already executed repeat rule waits for a fresh crossing
                     self._rearm.add(rid)
+                if rule["kind"] in TRAILING_ENTRY and rule["extreme"] is not None:
+                    # a low / high from before the restart is stale: follow the price afresh
+                    rule["extreme"] = None
+                    db.update_rule(rid, extreme=None)
             if not enabled or not live or price is None:
                 self._since.pop(rid, None)
+                if not enabled and rule["kind"] in TRAILING_ENTRY and rule["extreme"] is not None:
+                    rule["extreme"] = None          # automation switched off: start afresh when it is on again
+                    db.update_rule(rid, extreme=None)
+                continue
+            if rule["kind"] in TRAILING_ENTRY and not self._follow(db, rule, price):
+                self._since.pop(rid, None)
+                self._set_status(db, rule, status_msg("rule.st.wait_activation", op=activation_op(rule),
+                                                      price=f"{rule['activation']:g}"))
                 continue
             if needs_position(rule) and not has_position(rule, pos):
                 self._since.pop(rid, None)
