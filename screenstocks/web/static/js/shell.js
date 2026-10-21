@@ -144,20 +144,27 @@
   }
 
   // ---------------------------------------------------------------- loop
+  // Polls 4x per second (cheap), but renders only when the game wrote a new snapshot or a second has
+  // passed (countdowns) - new prices show up within ~250 ms instead of up to a second later.
+  let lastSeq = null, lastRender = 0;
   async function tick() {
     try {
       const d = await SS.call("tick");
       lastTick = d;
-      renderHeader(d);
-      fitHeader(false);
-      renderStatus(d);
-      renderUpdate(d.update);
-      const m = modules[active];
-      if (m && m.refresh) await m.refresh(d);
+      if (d.sequence !== lastSeq || Date.now() - lastRender >= 1000) {
+        lastSeq = d.sequence;
+        lastRender = Date.now();
+        renderHeader(d);
+        fitHeader(false);
+        renderStatus(d);
+        renderUpdate(d.update);
+        const m = modules[active];
+        if (m && m.refresh) await m.refresh(d);
+      }
     } catch (err) {
       console.error(err);
     }
-    setTimeout(tick, 1000);
+    setTimeout(tick, 250);
   }
 
   SS.ready().then(async () => {
