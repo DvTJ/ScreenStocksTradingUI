@@ -4,6 +4,7 @@
 (() => {
   const { t, fmt, esc, cls } = SS;
   const RANGES = ["1m", "5m", "15m", "1h", "6h", "24h", "all"];
+  const RANGE_S = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "6h": 21600, "24h": 86400 };   // as RANGES in market.py
   const TRADE_COLORS = { buy: "#3fb950", sell: "#f85149", short: "#a371f7", cover: "#58a6ff" };
   const LINE_COLORS = {
     avg_buy: "#58a6ff", avg_short: "#d2a8ff", event: "#d29922", stop_loss: "#f85149", take_profit: "#3fb950",
@@ -258,6 +259,12 @@
     const res = await SS.call("series_overlays", sid, range);
     if (sid !== S.selected || range !== S.range || S.loading) return;
     if (res.offset !== S.offset) return loadSeries(true);     // UTC offset changed (DST): chart times shift
+    // live points keep being appended: keep the stats (and marker snapping) to the selected range, as a full reload did
+    const secs = RANGE_S[range], last = S.times[S.times.length - 1];
+    if (secs && last !== undefined && S.times[0] < last - secs) {
+      const i = S.times.findIndex((tm) => tm >= last - secs);
+      S.times = S.times.slice(i); S.data = S.data.slice(i);
+    }
     applyOverlays(res);
   }
 
