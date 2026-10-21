@@ -7,6 +7,7 @@
 
 import argparse
 import logging
+import multiprocessing
 import sqlite3
 import sys
 import time
@@ -182,4 +183,6 @@ def _show_web_fallback(reason: str) -> None:
 
 
 if __name__ == "__main__":
+    # first: in the frozen exe a child process (bot calibration) starts this same exe, and must not start the app
+    multiprocessing.freeze_support()
     sys.exit(main())
