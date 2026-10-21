@@ -169,6 +169,16 @@ CREATE TABLE IF NOT EXISTS settings (
 """
 
 
+# Distinct stock ids of the price table by skipping from one id to the next on the primary key
+# (8 index seeks instead of a DISTINCT scan over every price row).
+PRICE_STOCK_IDS = """WITH RECURSIVE ids(id) AS (
+    SELECT MIN(stock_id) FROM prices
+    UNION ALL SELECT (SELECT MIN(stock_id) FROM prices WHERE stock_id > ids.id) FROM ids WHERE ids.id IS NOT NULL)
+SELECT id FROM ids WHERE id IS NOT NULL"""
+
+COUNTS_TTL_S = 10.0
+
+
 def command_result_key(r) -> str:
     # The game reuses the id per command file ("$PUMP/buypercent") and only counts
     # `run` up; run restarts with the game, so receivedAtMs makes the key unique.
@@ -194,6 +204,7 @@ class Storage:
         self.conn.execute("PRAGMA synchronous=NORMAL")      # per connection, needs no lock
         self._pos_cache: Optional[dict] = None
         self._prev_cash: Optional[tuple[int, float]] = None
+        self._counts: Optional[tuple[float, dict]] = None
 
     def _prepare(self) -> None:
         """New or older database: tables, WAL mode and migrations, once. main.py does this before any thread
@@ -437,14 +448,18 @@ class Storage:
 
     def stock_ids(self) -> list[str]:
         ids = {r[0] for r in self.conn.execute("SELECT stock_id FROM stocks")}
-        ids |= {r[0] for r in self.conn.execute("SELECT DISTINCT stock_id FROM prices")}
+        ids |= {r[0] for r in self.conn.execute(PRICE_STOCK_IDS)}
         return sorted(ids)
 
+    # Whole-table MIN/MAX(time_ms) has no usable index (it leads with stock_id) and scans every price;
+    # one index seek per stock instead.
     def latest_time_ms(self) -> Optional[int]:
-        return self.conn.execute("SELECT MAX(time_ms) FROM prices").fetchone()[0]
+        return self.conn.execute(
+            f"SELECT MAX((SELECT MAX(time_ms) FROM prices WHERE stock_id=id)) FROM ({PRICE_STOCK_IDS})").fetchone()[0]
 
     def first_time_ms(self) -> Optional[int]:
-        return self.conn.execute("SELECT MIN(time_ms) FROM prices").fetchone()[0]
+        return self.conn.execute(
+            f"SELECT MIN((SELECT MIN(time_ms) FROM prices WHERE stock_id=id)) FROM ({PRICE_STOCK_IDS})").fetchone()[0]
 
     def latest_price(self, stock_id: str) -> Optional[tuple[int, float]]:
         return self.conn.execute(
@@ -753,8 +768,14 @@ class Storage:
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
     def counts(self) -> dict[str, int]:
+        # ponytail: COUNT(*) scans the whole table (~100 ms at a week of prices) and the status bar asks
+        # several times a second, so the numbers may be up to COUNTS_TTL_S old.
+        if self._counts and time.time() - self._counts[0] < COUNTS_TTL_S:
+            return dict(self._counts[1])
         q = lambda t: self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]  # noqa: E731
-        return {"prices": q("prices"), "snapshots": q("snapshots"), "news": q("market_news")}
+        counts = {"prices": q("prices"), "snapshots": q("snapshots"), "news": q("market_news")}
+        self._counts = (time.time(), counts)
+        return dict(counts)
 
     # ------------------------------------------------------------------ export
 
