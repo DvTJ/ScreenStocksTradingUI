@@ -58,9 +58,12 @@ FEE_SAMPLES = 20             # recent real costs kept per stock
 FEE_MIN_SAMPLES = 3          # fewer than this: the default FEE_PCT
 FEE_MAX_PCT = 10.0           # a measured fill cost beyond this is a measuring error, not a cost
 EXIT_ORDER = {"stop": 0, "timeout": 1, "target": 2}
+STOP_CONFIRM = True          # a stop-loss must last confirm_s (a one-tick spike mostly comes back) ...
+STOP_HARD = 2.0              # ... unless the loss is beyond this many times stop_pct
 MISSING_GRACE_S = 5.0         # a held position must be absent from the game this long before the bot forgets it
 PAUSE_AFTER_LOSSES = 2       # consecutive losing trades on one stock ...
 PAUSE_S = 900                # ... pause it this long
+PAUSE_KEY = "bot_pause"      # stock -> pause end (epoch s), so a restart does not lift it
 MAX_TRADES_KEPT = 500
 # Self-learning from the bot's own real orders (practice fills are instant, so they teach nothing):
 LEARN_KEY = "bot_learn"      # {"latency": [s, ...], "live": {stock: [return %, ...]}}
@@ -215,7 +218,8 @@ def stake_pct(trade_pct: int, z: float, p: Params, cash: float, free: float, pri
     pct = size_pct(trade_pct, z, p.entry_z)
     biggest = trade_money(price, 100, free, available, buying)         # money a 100 % order would move
     if biggest > 0:
-        worst = max(p.stop_pct * SLIPPAGE, p.jump_pct)      # a stop cannot protect against a bigger one-tick jump
+        reach = max(SLIPPAGE, STOP_HARD) if STOP_CONFIRM else SLIPPAGE      # a confirmed stop may run to the hard limit
+        worst = max(p.stop_pct * reach, p.jump_pct)         # a stop cannot protect against a bigger one-tick jump
         allowed = cash * p.max_loss_pct / 100 / (worst / 100)
         pct = min(pct, math.floor(100 * allowed / biggest + 1e-9))
         if pct < 1:
@@ -331,11 +335,17 @@ class Strategy:
             pnl = (price / h["entry_price"] - 1) * (1 if long_ else -1) * 100
             reason = None
             if pnl <= -p.stop_pct:
-                reason = "stop"
-            elif now - h["entry_s"] >= p.max_hold_s:
-                reason = "timeout"
-            elif z is not None and (z >= -p.exit_z if long_ else z <= p.exit_z):
-                reason = "target"
+                # the noise spikes and comes back (that is what the bot trades): a stop waits confirm_s like an entry,
+                # except beyond STOP_HARD x the stop, where it is no blip any more; meanwhile no other exit
+                since = h.setdefault("stop_since", now)
+                if not STOP_CONFIRM or pnl <= -p.stop_pct * STOP_HARD or now - since + 1 >= p.confirm_s:
+                    reason = "stop"
+            else:
+                h.pop("stop_since", None)
+                if now - h["entry_s"] >= p.max_hold_s:
+                    reason = "timeout"
+                elif z is not None and (z >= -p.exit_z if long_ else z <= p.exit_z):
+                    reason = "target"
             if reason:
                 out.append((sid, "sell" if long_ else "cover", reason, z))
         out.sort(key=lambda o: EXIT_ORDER[o[2]])          # one command per step: a stop goes before a target
@@ -482,6 +492,8 @@ class Calib:
     profit: float = 0.0  # net profit (money), without the worst-trade penalty
     avg_ret: float = 0.0  # mean return per simulated trade (%), what a live trade is expected to make
     trust: float = 1.0   # stake factor learned from the stock's real trades (apply_learning)
+    side_avg: dict = field(default_factory=dict)     # "long" / "short" -> mean simulated return (%) of that side
+    side_trust: dict = field(default_factory=dict)   # "long" / "short" -> stake factor of that side's real trades
 
     @property
     def good(self) -> bool:
@@ -502,8 +514,10 @@ def calibrate(grids: dict, s: BotSettings, buy_cd_s: float = 85, short_cd_s: flo
             profit = r["end"] - capital
             worst = min((x["pnl"] for x in r["trades"]), default=0.0)
             rets = [x["ret"] for x in r["trades"]]
+            side_avg = {sd: statistics.mean(v) for sd in ("long", "short")
+                        if (v := [x["ret"] for x in r["trades"] if x["side"] == sd])}
             return Calib(p, profit - abs(min(0.0, worst)), r["n"], r["win_rate"], profit,
-                         statistics.mean(rets) if rets else 0.0)
+                         statistics.mean(rets) if rets else 0.0, side_avg=side_avg)
 
         jump = jump_p99(g)
         tries = [run(replace(base, tau_s=tau, entry_z=round(base.entry_z + dz, 2), jump_pct=jump))
@@ -552,11 +566,16 @@ def _learn_raw(db: Storage) -> dict:
     return {"latency": list(raw.get("latency") or []), "live": dict(raw.get("live") or {})}
 
 
-def record_live(db: Storage, sid: str, ret: float) -> None:
-    """Remember the return of one real trade of a stock (apply_learning weighs it against the replay)."""
+def record_live(db: Storage, sid: str, ret: float, side: str = "") -> None:
+    """Remember the return and side of one real trade of a stock (apply_learning weighs it against the replay)."""
     raw = _learn_raw(db)
-    raw["live"][sid] = (raw["live"].get(sid, []) + [round(ret, 3)])[-LEARN_TRADES:]
+    raw["live"][sid] = (raw["live"].get(sid, []) + [[round(ret, 3), side]])[-LEARN_TRADES:]
     db.set_setting(LEARN_KEY, json.dumps(raw))
+
+
+def _live_trades(entries: list) -> list[tuple[float, str]]:
+    """(return, side) of the stored real trades; trades stored before the side was kept have side ""."""
+    return [(e, "") if isinstance(e, (int, float)) else (e[0], e[1]) for e in entries]
 
 
 def record_latency(db: Storage, seconds: float) -> None:
@@ -578,20 +597,30 @@ def live_trust(c: Calib, rets: list) -> float:
     """Stake factor of a stock: its real trades blended with the replay's expectation, the more real trades the more
     they count. 0 = the blend expects a loss (the stock is dropped); below 1 = it does worse live than replayed.
     Never above 1: the user's trade % stays the maximum."""
-    if not rets or c.avg_ret <= 0:
+    return _trust(c.avg_ret, rets)
+
+
+def _trust(replayed: float, rets: list) -> float:
+    if not rets or replayed <= 0:
         return 1.0
     w = len(rets) / (len(rets) + LEARN_K)
-    expected = w * statistics.mean(rets) + (1 - w) * c.avg_ret
-    return 0.0 if expected <= 0 else min(1.0, max(LEARN_MIN_TRUST, expected / c.avg_ret))
+    expected = w * statistics.mean(rets) + (1 - w) * replayed
+    return 0.0 if expected <= 0 else min(1.0, max(LEARN_MIN_TRUST, expected / replayed))
 
 
 def apply_learning(calib: dict, live: dict) -> dict:
     """The calibration corrected by the real trades: scores scaled by the trust (a distrusted stock ranks lower, a
-    stock expected to lose is no longer good)."""
+    stock expected to lose is no longer good), plus a trust per side - a stock whose real shorts lose stops shorting
+    (stake 0) but keeps buying, and the other way round."""
     out = {}
     for sid, c in calib.items():
-        trust = live_trust(c, live.get(sid, []))
-        out[sid] = replace(c, trust=trust, score=c.score * trust if trust > 0 else -abs(c.score) - 1.0)
+        trades = _live_trades(live.get(sid, []))
+        # trades stored before the side was kept count for both sides; the stock ranks by its better side
+        side_trust = {sd: _trust(c.side_avg.get(sd, c.avg_ret), [r for r, s in trades if s in (sd, "")])
+                      for sd in ("long", "short")}
+        trust = max(side_trust.values())
+        out[sid] = replace(c, trust=trust, side_trust=side_trust,
+                           score=c.score * trust if trust > 0 else -abs(c.score) - 1.0)
     return out
 
 
@@ -951,6 +980,7 @@ class BotTrader:
         self._calib_key = None
         self._pending: Optional[dict] = None
         self._server_ms = 0
+        self._pauses_loaded = False
         self._missing: dict[str, float] = {}    # sid -> local time its position was first seen missing
         self._blocked: dict[str, float] = {}    # sid -> local time until which entries are skipped
         self._streak: dict[str, int] = {}       # consecutive losing trades per stock
@@ -1039,15 +1069,27 @@ class BotTrader:
         return replace(p, min_edge_pct=max(p.min_edge_pct, 2 * fee))
 
     def _stake_pct(self, sid: str, *args) -> int:
-        """stake_pct() scaled by what the stock's real trades taught (Calib.trust, 1 while unknown)."""
+        """stake_pct() scaled by what the stock's real trades of this side taught (1 while unknown); args as stake_pct,
+        whose last one is `buying`."""
         c = (self.calib or {}).get(sid)
-        return math.floor(stake_pct(*args) * (c.trust if c else 1.0) + 1e-9)
+        trust = c.side_trust.get("long" if args[-1] else "short", c.trust) if c else 1.0
+        return math.floor(stake_pct(*args) * trust + 1e-9)
+
+    @staticmethod
+    def _saved_pauses(db: Storage) -> dict:
+        try:
+            return {k: float(v) for k, v in json.loads(db.get_setting(_key(db, PAUSE_KEY), "{}")).items()}
+        except (ValueError, TypeError, AttributeError):
+            return {}
 
     def step(self, db: Storage, s: BotSettings, live: bool, enabled: bool, now_s: float, server_ms: int,
              stocks: dict, positions: dict, snap: dict) -> None:
         # when the price acted on in this step was written: the game stamps command results on that same clock (the
         # server time runs ~1 s ahead of it), and price -> fill is the delay the simulation's latency stands for
         self._server_ms = snap.get("written_ms") or 0
+        if not self._pauses_loaded:                 # a losing streak's pause outlives a restart
+            self._pauses_loaded = True
+            self._blocked.update({k: v for k, v in self._saved_pauses(db).items() if v > now_s})
         base, max_pos, shorts = effective(s)
         st = self.strategy
         st.default, st.max_positions, st.shorts = base, max_pos, shorts
@@ -1280,7 +1322,7 @@ class BotTrader:
                 cover_fee = self.fees.get(sid, FEE_PCT) if h and h["side"] == "short" and real == price else 0.0
                 ret = self._closed(db, held.pop(sid, None), sid, pd["reason"], real, now_s, fee_pct=cover_fee)
                 if ret is not None:
-                    record_live(db, sid, ret)               # what this stock really makes: the next calibration learns it
+                    record_live(db, sid, ret, h["side"])    # what this stock really makes: the next calibration learns it
                 self._save_held(db, held)
         elif time.time() - pd["t"] > RESULT_TIMEOUT_S:
             self._pending = None
@@ -1349,5 +1391,7 @@ class BotTrader:
         if self._streak[sid] >= PAUSE_AFTER_LOSSES:
             self._streak[sid] = 0
             self._blocked[sid] = now_s + PAUSE_S
+            pauses = {k: v for k, v in self._saved_pauses(db).items() if v > now_s}
+            db.set_setting(_key(db, PAUSE_KEY), json.dumps({**pauses, sid: now_s + PAUSE_S}))   # survives a restart
             self._log(db, sid, t("bot.log.paused", sid=sid, min=PAUSE_S // 60))
         return ret
