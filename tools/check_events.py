@@ -207,6 +207,22 @@ def check_rule_near():
     assert rule_near(buy, None), "no price: stay careful"
 
 
+def check_trailing_zone():
+    """A trailing buy activated below 7.56 must not buy a spike at 34 (live, before ZONE_K)."""
+    from screenstocks.automation import left_zone, trigger_price, condition_met
+    stub = SimpleNamespace(update_rule=lambda *a, **k: None)
+    rule = {"id": 1, "kind": "trailing_buy", "side": "long", "value": 2.0, "activation": 7.56, "extreme": None}
+    follow = AutomationEngine._follow
+    assert not follow(stub, rule, 9.0), "above the activation price: waits"
+    assert follow(stub, rule, 7.4) and rule["extreme"] == 7.4, "dipped below it: follows the low"
+    assert follow(stub, rule, 7.2) and rule["extreme"] == 7.2
+    assert condition_met(rule, 7.35, trigger_price(rule, None)), "turned up 2 % inside the zone: buys"
+    assert left_zone(rule, 34.0) and not follow(stub, rule, 34.0) and rule["extreme"] is None, "a spike ends the following"
+    short = {"id": 2, "kind": "trailing_short", "side": "short", "value": 4.0, "activation": 11.09, "extreme": 11.8}
+    assert left_zone(short, 8.17) and not left_zone(short, 10.7), "a short never sells the bottom of a drop"
+    assert not left_zone({**rule, "activation": None}, 34.0), "no activation price: no zone"
+
+
 def check_settings():
     db = new_db()
     db.set_setting(events.SETTINGS_KEY, json.dumps({"pumps": True, "crashes": True}))       # stored by an older version
@@ -220,6 +236,7 @@ def check_settings():
 if __name__ == "__main__":
     check_settings()
     check_rule_near()
+    check_trailing_zone()
     check_pump()
     check_crash()
     check_rules_yield()
