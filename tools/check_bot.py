@@ -233,6 +233,43 @@ def check_calibration() -> None:
     assert gain["n"] == 2 and gain["gain"] == 8.0 and gain["win_rate"] == 50 and gain["worst"]["sid"] == "B", gain
 
 
+def check_learning() -> None:
+    """Self-learning: real trades scale the stake, the measured delay feeds the replay, refinement must validate."""
+    c = bot.Calib(bot.Params(), score=100.0, n=10, win_rate=60, profit=120.0, avg_ret=4.0)
+    assert bot.live_trust(c, []) == 1.0, "no real trades yet: trust the replay"
+    assert bot.live_trust(c, [5.0] * 10) == 1.0, "better than replayed: full stake, never above the user's trade %"
+    half = bot.live_trust(c, [1.0] * 15)                   # blend 0.75 * 1 + 0.25 * 4 = 1.75 -> 1.75 / 4
+    assert abs(half - 1.75 / 4) < 1e-9, half
+    assert bot.live_trust(c, [-3.0] * 10) == 0.0, "real trades lose: the stock is dropped"
+    assert bot.live_trust(c, [-3.0]) > 0, "one bad trade does not overturn the replay"
+    learned = bot.apply_learning({"A": c, "B": c}, {"B": [-3.0] * 10})
+    assert learned["A"].good and learned["A"].trust == 1.0 and not learned["B"].good
+    assert bot.pick(learned, 3) == ["A"]
+    with tempfile.TemporaryDirectory() as d:
+        db = Storage(Path(d) / "l.db")
+        bot.record_latency(db, 2.3)
+        bot.record_latency(db, 3.1)
+        assert bot.measured_latency(db) is None, "too few orders: keep the default"
+        bot.record_latency(db, 2.8)
+        assert bot.measured_latency(db) == 3, "median 2.8 s -> 3 s on the 1 s grid"
+        for r in (1.0, -2.0):
+            bot.record_live(db, "A", r)
+        assert bot._learn_raw(db)["live"]["A"] == [1.0, -2.0]
+        db.close()
+    trader = bot.BotTrader(writer=None)
+    trader.calib = {"A": bot.replace(c, trust=0.5)}
+    args = (100, -3.0, bot.Params(max_loss_pct=100), 1e6, 1e6, 10.0, None, True)
+    assert trader._stake_pct("A", *args) == bot.stake_pct(*args) // 2 and trader._stake_pct("B", *args) == bot.stake_pct(*args)
+    # refinement: kept only when it also wins on the newest part; a run whose score never changes keeps `best`
+    calls = []
+    flat = lambda p, grid=None: calls.append(p) or bot.Calib(p, 1.0, 5, 50, 1.0)  # noqa: E731
+    best = flat(bot.Params())
+    assert bot.refine(flat, best, [10.0] * 4000) is best and len(calls) > 3
+    s = bot.BotSettings(level="medium", shorts=True)
+    calib = bot.calibrate({"MR": noisy(0.04, 4000, 1)}, s, latency_s=4)
+    assert calib["MR"].good and calib["MR"].avg_ret > 0, calib["MR"]
+
+
 def check_backtest_and_state() -> None:
     with tempfile.TemporaryDirectory() as d:
         db = Storage(Path(d) / "a.db")
@@ -305,6 +342,7 @@ if __name__ == "__main__":
     check_trade_history()
     check_clear_history()
     check_calibration()
+    check_learning()
     check_backtest_and_state()
     check_config_roundtrip()
     check_translations()

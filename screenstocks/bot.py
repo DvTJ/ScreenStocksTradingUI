@@ -60,6 +60,17 @@ MISSING_GRACE_S = 5.0         # a held position must be absent from the game thi
 PAUSE_AFTER_LOSSES = 2       # consecutive losing trades on one stock ...
 PAUSE_S = 900                # ... pause it this long
 MAX_TRADES_KEPT = 500
+# Self-learning from the bot's own real orders (practice fills are instant, so they teach nothing):
+LEARN_KEY = "bot_learn"      # {"latency": [s, ...], "live": {stock: [return %, ...]}}
+LEARN_TRADES = 30            # recent real trades kept per stock
+LEARN_K = 5                  # this many real trades weigh as much as the replay's expectation (shrinkage)
+LEARN_MIN_TRUST = 0.25       # smallest stake factor of a stock that does worse live than in the replay
+LATENCY_SAMPLES = 20         # recent signal -> fill delays kept
+LATENCY_MAX_S = 10
+# Per-stock refinement of more parameters: chosen on the older part, kept only if they also win on the newest part.
+VALIDATE_SHARE = 1 / 3
+REFINE_MARGIN = 0.10         # ... by at least this share of the unrefined validation score
+REFINE = (("stop_pct", (8.0, 10.0, 15.0, 20.0)), ("exit_z", (0.05, 0.1, 0.2)), ("confirm_s", (4, 6, 8)))
 
 LEVELS = ("simple", "medium", "advanced")
 SLIPPAGE = 1.5               # a stop may fill this much further than stop_pct (price jumps, latency)
@@ -465,6 +476,8 @@ class Calib:
     n: int
     win_rate: float
     profit: float = 0.0  # net profit (money), without the worst-trade penalty
+    avg_ret: float = 0.0  # mean return per simulated trade (%), what a live trade is expected to make
+    trust: float = 1.0   # stake factor learned from the stock's real trades (apply_learning)
 
     @property
     def good(self) -> bool:
@@ -473,17 +486,20 @@ class Calib:
 
 def calibrate(grids: dict, s: BotSettings, buy_cd_s: float = 85, short_cd_s: float = 85, capital: float = 10000.0,
               limits: Optional[dict] = None, news: Optional[dict] = None,
-              fees: Optional[dict] = None) -> dict[str, Calib]:
-    """Best (tau_s, entry_z) per stock by net profit (in money) on the price grids."""
+              fees: Optional[dict] = None, latency_s: Optional[int] = None) -> dict[str, Calib]:
+    """Best (tau_s, entry_z) per stock by net profit (in money) on the price grids, then stop / exit / confirmation
+    refined per stock where that also wins on the newest part. latency_s: the measured order delay (default LATENCY_S)."""
     base, _, shorts = effective(s)
     out = {}
     for sid, g in grids.items():
-        def run(p):
-            r = simulate({sid: g}, {sid: p}, s.trade_pct, 1, shorts, buy_cd_s, short_cd_s, capital=capital,
-                         limits=limits, news=news, fees=fees)
+        def run(p, grid=g):
+            r = simulate({sid: grid}, {sid: p}, s.trade_pct, 1, shorts, buy_cd_s, short_cd_s, latency_s=latency_s,
+                         capital=capital, limits=limits, news=news, fees=fees)
             profit = r["end"] - capital
             worst = min((x["pnl"] for x in r["trades"]), default=0.0)
-            return Calib(p, profit - abs(min(0.0, worst)), r["n"], r["win_rate"], profit)
+            rets = [x["ret"] for x in r["trades"]]
+            return Calib(p, profit - abs(min(0.0, worst)), r["n"], r["win_rate"], profit,
+                         statistics.mean(rets) if rets else 0.0)
 
         jump = jump_p99(g)
         tries = [run(replace(base, tau_s=tau, entry_z=round(base.entry_z + dz, 2), jump_pct=jump))
@@ -494,13 +510,88 @@ def calibrate(grids: dict, s: BotSettings, buy_cd_s: float = 85, short_cd_s: flo
             c = run(replace(best.params, jump_pct=0.0))
             if c.score > best.score:
                 best = c
-        out[sid] = best
+        out[sid] = refine(run, best, g)
+    return out
+
+
+def refine(run, best: Calib, g: list) -> Calib:
+    """Coordinate search of the REFINE parameters on the older part of the grid; the result replaces `best` only when
+    it also scores better on the newest VALIDATE_SHARE (against noise that fits only the past)."""
+    cut = int(len(g) * (1 - VALIDATE_SHARE))
+    if cut < MIN_HISTORY_S or len(g) - cut < MIN_HISTORY_S // 2:
+        return best
+    train, test = g[:cut], g[cut:]
+    p, cur = best.params, run(best.params, train).score
+    for name, steps in REFINE:
+        for v in steps:
+            if v != getattr(p, name):
+                c = run(replace(p, **{name: type(getattr(p, name))(v)}), train)
+                if c.score > cur:
+                    p, cur = c.params, c.score
+    if p != best.params:
+        new, old = run(p, test).score, run(best.params, test).score
+        if new > old + abs(old) * REFINE_MARGIN:         # clearly better, not just luckier on a short stretch
+            return run(p)
+    return best
+
+
+# ------------------------------------------------------------------------------ self-learning
+
+def _learn_raw(db: Storage) -> dict:
+    try:
+        raw = json.loads(db.get_setting(LEARN_KEY, "{}"))
+    except ValueError:
+        raw = {}
+    return {"latency": list(raw.get("latency") or []), "live": dict(raw.get("live") or {})}
+
+
+def record_live(db: Storage, sid: str, ret: float) -> None:
+    """Remember the return of one real trade of a stock (apply_learning weighs it against the replay)."""
+    raw = _learn_raw(db)
+    raw["live"][sid] = (raw["live"].get(sid, []) + [round(ret, 3)])[-LEARN_TRADES:]
+    db.set_setting(LEARN_KEY, json.dumps(raw))
+
+
+def record_latency(db: Storage, seconds: float) -> None:
+    """Remember one real signal -> fill delay (game server time)."""
+    raw = _learn_raw(db)
+    raw["latency"] = (raw["latency"] + [round(seconds, 2)])[-LATENCY_SAMPLES:]
+    db.set_setting(LEARN_KEY, json.dumps(raw))
+
+
+def measured_latency(db: Storage) -> Optional[int]:
+    """The median measured order delay in whole seconds (the simulation grid), None until FEE_MIN_SAMPLES orders."""
+    lat = _learn_raw(db)["latency"]
+    if len(lat) < FEE_MIN_SAMPLES:
+        return None
+    return min(LATENCY_MAX_S, max(1, math.ceil(statistics.median(lat))))
+
+
+def live_trust(c: Calib, rets: list) -> float:
+    """Stake factor of a stock: its real trades blended with the replay's expectation, the more real trades the more
+    they count. 0 = the blend expects a loss (the stock is dropped); below 1 = it does worse live than replayed.
+    Never above 1: the user's trade % stays the maximum."""
+    if not rets or c.avg_ret <= 0:
+        return 1.0
+    w = len(rets) / (len(rets) + LEARN_K)
+    expected = w * statistics.mean(rets) + (1 - w) * c.avg_ret
+    return 0.0 if expected <= 0 else min(1.0, max(LEARN_MIN_TRUST, expected / c.avg_ret))
+
+
+def apply_learning(calib: dict, live: dict) -> dict:
+    """The calibration corrected by the real trades: scores scaled by the trust (a distrusted stock ranks lower, a
+    stock expected to lose is no longer good)."""
+    out = {}
+    for sid, c in calib.items():
+        trust = live_trust(c, live.get(sid, []))
+        out[sid] = replace(c, trust=trust, score=c.score * trust if trust > 0 else -abs(c.score) - 1.0)
     return out
 
 
 def calibrate_db(path, s: BotSettings, buy_cd_s: float = 85, short_cd_s: float = 85) -> dict[str, Calib]:
-    """calibrate() on the last CALIB_WINDOW_S of recorded prices, on its own connection. Top-level with picklable
-    arguments and result: BotTrader runs it in a child process (spawn on Windows)."""
+    """calibrate() on the last CALIB_WINDOW_S of recorded prices, on its own connection, with the measured order delay
+    and corrected by the real trades (self-learning). Top-level with picklable arguments and result: BotTrader runs
+    it in a child process (spawn on Windows)."""
     db = Storage(path)
     try:
         end = db.latest_time_ms() or 0
@@ -509,8 +600,10 @@ def calibrate_db(path, s: BotSettings, buy_cd_s: float = 85, short_cd_s: float =
         grids = {k: v for k, v in all_grids.items() if k not in s.excluded}
         if len(next(iter(grids.values()), ())) < MIN_HISTORY_S:
             grids = {}
-        return calibrate(grids, s, buy_cd_s, short_cd_s, capital=(db.latest_snapshot() or {}).get("cash") or 10000.0,
-                         limits=stock_limits(db), news=news_index(db, secs), fees=load_fees(db))
+        calib = calibrate(grids, s, buy_cd_s, short_cd_s, capital=(db.latest_snapshot() or {}).get("cash") or 10000.0,
+                          limits=stock_limits(db), news=news_index(db, secs), fees=load_fees(db),
+                          latency_s=measured_latency(db))
+        return apply_learning(calib, _learn_raw(db)["live"])
     finally:
         db.close()
 
@@ -845,6 +938,7 @@ class BotTrader:
         self._calib_at = 0.0
         self._calib_key = None
         self._pending: Optional[dict] = None
+        self._server_ms = 0
         self._missing: dict[str, float] = {}    # sid -> local time its position was first seen missing
         self._blocked: dict[str, float] = {}    # sid -> local time until which entries are skipped
         self._streak: dict[str, int] = {}       # consecutive losing trades per stock
@@ -917,8 +1011,9 @@ class BotTrader:
             # nothing idle in between and nothing to repair when one dies (BrokenProcessPool is just a failed calibration).
             with ProcessPoolExecutor(max_workers=1, initializer=_exit_with_parent) as pool:
                 self.calib = pool.submit(calibrate_db, path, s, *cds).result()
-            log.info("bot calibrated: %s", {k: (c.params.tau_s, c.params.entry_z, round(c.score, 1), c.n)
-                                            for k, c in self.calib.items()})
+            log.info("bot calibrated (tau, z, stop, exit, confirm, score, n, trust): %s",
+                     {k: (c.params.tau_s, c.params.entry_z, c.params.stop_pct, c.params.exit_z, c.params.confirm_s,
+                          round(c.score, 1), c.n, round(c.trust, 2)) for k, c in self.calib.items()})
         except Exception:
             log.exception("bot calibration failed")
         finally:
@@ -931,8 +1026,14 @@ class BotTrader:
         """The expected move back must cover the measured round trip cost of this stock."""
         return replace(p, min_edge_pct=max(p.min_edge_pct, 2 * fee))
 
+    def _stake_pct(self, sid: str, *args) -> int:
+        """stake_pct() scaled by what the stock's real trades taught (Calib.trust, 1 while unknown)."""
+        c = (self.calib or {}).get(sid)
+        return math.floor(stake_pct(*args) * (c.trust if c else 1.0) + 1e-9)
+
     def step(self, db: Storage, s: BotSettings, live: bool, enabled: bool, now_s: float, server_ms: int,
              stocks: dict, positions: dict, snap: dict) -> None:
+        self._server_ms = server_ms                 # signal time of an order sent in this step (measured latency)
         base, max_pos, shorts = effective(s)
         st = self.strategy
         st.default, st.max_positions, st.shorts = base, max_pos, shorts
@@ -1054,7 +1155,7 @@ class BotTrader:
         fair, p = st.fair[sid], st.p(sid)
         edge = (fair / price - 1) * 100 if buying else (price / fair - 1) * 100
         cash, free = paper_wallet(load_results(db), held) if s.paper else (snap.get("cash") or 0,) * 2
-        pct = stake_pct(s.trade_pct, z, p, cash, free, price, stock["available_shares"], buying)
+        pct = self._stake_pct(sid, s.trade_pct, z, p, cash, free, price, stock["available_shares"], buying)
         if pct < 1:
             return False
         waited = round(now_s - st._since.get(sid, (None, now_s))[1] + 1)
@@ -1094,7 +1195,7 @@ class BotTrader:
         if reason == "entry":
             cash, free = paper_wallet(load_results(db), held)
             buying = action == "buy"
-            pct = stake_pct(s.trade_pct, z, self.strategy.p(sid), cash, free, price, stock["available_shares"], buying)
+            pct = self._stake_pct(sid, s.trade_pct, z, self.strategy.p(sid), cash, free, price, stock["available_shares"], buying)
             money = trade_money(price, pct, free, stock["available_shares"], buying)
             if pct < 1 or money <= 0:
                 return
@@ -1109,7 +1210,7 @@ class BotTrader:
 
     def _send(self, db: Storage, s: BotSettings, sid: str, action: str, reason: str, price: float,
               z: Optional[float], now_s: float, stock: dict, cash: float, close_pct: int = 100) -> bool:
-        pct = (stake_pct(s.trade_pct, z, self.strategy.p(sid), cash, cash, price, stock["available_shares"],
+        pct = (self._stake_pct(sid, s.trade_pct, z, self.strategy.p(sid), cash, cash, price, stock["available_shares"],
                          action == "buy") if reason == "entry" else close_pct)
         if reason == "entry" and pct < 1:
             return False                                   # over the risk budget
@@ -1122,7 +1223,7 @@ class BotTrader:
             self._log(db, sid, t("rule.log.send_failed", error=exc))
             return False
         self._pending = dict(sent=sent, known=known, pos_ms=pos_ms, t=time.time(), reason=reason, price=price, now_s=now_s,
-                             pct=sent.percent, target=self.strategy.fair.get(sid),
+                             pct=sent.percent, target=self.strategy.fair.get(sid), server_ms=self._server_ms,
                              money=trade_money(price, sent.percent, cash, stock["available_shares"], action == "buy"))
         return True
 
@@ -1141,6 +1242,9 @@ class BotTrader:
                 self._log(db, sid, t("event.log.rejected", status=status_text(res["status"]),
                                      reason=reason_text(res["reason"])))
                 return
+            done_ms = res["finished_ms"] or res["received_ms"]
+            if done_ms and pd.get("server_ms") and 0 < done_ms - pd["server_ms"] < LATENCY_MAX_S * 3000:
+                record_latency(db, (done_ms - pd["server_ms"]) / 1000)      # signal (server time) -> filled
             if sent.action in ("buy", "short"):
                 real = self._real_entry_price(db, sent, price)
                 record_fee(db, sid, "in", (real / price - 1) * 100 * (1 if sent.action == "buy" else -1))
@@ -1157,7 +1261,9 @@ class BotTrader:
                 real = self._real_exit_price(db, sid, h, price, pd["pos_ms"])
                 if real != price:
                     record_fee(db, sid, "out", (price / real - 1) * 100)
-                self._closed(db, held.pop(sid, None), sid, pd["reason"], real, now_s)
+                ret = self._closed(db, held.pop(sid, None), sid, pd["reason"], real, now_s)
+                if ret is not None:
+                    record_live(db, sid, ret)               # what this stock really makes: the next calibration learns it
                 self._save_held(db, held)
         elif time.time() - pd["t"] > RESULT_TIMEOUT_S:
             self._pending = None
@@ -1208,9 +1314,10 @@ class BotTrader:
         return estimate
 
     def _closed(self, db: Storage, h: Optional[dict], sid: str, reason: str, price: float, now_s: float,
-                fee_pct: float = 0.0) -> None:
+                fee_pct: float = 0.0) -> Optional[float]:
+        """Journal a closed trade; returns its return (%), None without a held position."""
         if not h:
-            return
+            return None
         # ponytail: return uses the signal-time prices, not the exact fills
         ret = (price / h["entry_price"] - 1) * (1 if h["side"] == "long" else -1) * 100 - fee_pct
         res = load_results(db)
@@ -1226,3 +1333,4 @@ class BotTrader:
             self._streak[sid] = 0
             self._blocked[sid] = now_s + PAUSE_S
             self._log(db, sid, t("bot.log.paused", sid=sid, min=PAUSE_S // 60))
+        return ret
