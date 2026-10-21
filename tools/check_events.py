@@ -195,6 +195,18 @@ def check_rules_yield():
           f"stop-loss #{r_stop} sent")
 
 
+def check_rule_near():
+    """A far-away limit rule must not stop the bot's entries of its kind (a limit buy at 2 with the price at 30)."""
+    from screenstocks.bot import rule_near
+    buy = {"kind": "buy_limit", "value": 2.0}
+    assert not rule_near(buy, 29.7) and rule_near(buy, 2.1) and rule_near(buy, 1.5)
+    short = {"kind": "short_limit", "value": 100.0}
+    assert not rule_near(short, 50.0) and rule_near(short, 95.0)
+    assert not rule_near({"kind": "trailing_buy", "value": 5, "extreme": None}, 10.0), "waits for its activation"
+    assert rule_near({"kind": "trailing_buy", "value": 5, "extreme": 9.0}, 10.0), "follows the price: may fire any time"
+    assert rule_near(buy, None), "no price: stay careful"
+
+
 def check_settings():
     db = new_db()
     db.set_setting(events.SETTINGS_KEY, json.dumps({"pumps": True, "crashes": True}))       # stored by an older version
@@ -207,6 +219,7 @@ def check_settings():
 
 if __name__ == "__main__":
     check_settings()
+    check_rule_near()
     check_pump()
     check_crash()
     check_rules_yield()

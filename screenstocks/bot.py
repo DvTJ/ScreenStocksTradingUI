@@ -74,6 +74,7 @@ ENTRY_Z_STEPS = (-0.5, 0.0, 0.5, 1.0)    # tried around the caution preset's ent
 EVENT_COOLDOWN_S = 90         # buy / short cooldown the event trader needs free (it is shared by all stocks)
 EVENT_AFTER_S = {"pump": 180, "crash": 900}     # the bot stays out of the stock this long after an event starts
 PUMP_LEAD_S = 60             # the event trader buys a pump about this long before it
+RULE_NEAR_PCT = 10.0         # a user's limit rule this close to its price keeps the bot's entries of its kind back
 JUMP_FORCE = 1.5             # a jump bigger than this many times the stop's reach is always budgeted
 JUMP_Q = 0.97                # quantile of the one-tick moves used as the stock's typical big jump
 THINK_REPEAT_S = 60          # a stock's thought is repeated at most this often while it does not change
@@ -518,6 +519,19 @@ def _exit_with_parent() -> None:
     """Child process: quit as soon as the app is gone, also when it was killed or crashed (else the idle worker
     would wait for more work forever)."""
     threading.Thread(target=lambda: (multiprocessing.parent_process().join(), os._exit(1)), daemon=True).start()
+
+
+def rule_near(rule: dict, price: Optional[float]) -> bool:
+    """A user's entry rule that may fire soon, so the bot keeps the game cooldown of its kind free: a limit within
+    RULE_NEAR_PCT of its price, a trailing entry once it follows the price. A limit buy far below the price would
+    otherwise stop every bot buy for good."""
+    if rule["kind"] in ("trailing_buy", "trailing_short"):
+        return rule.get("extreme") is not None
+    if not price or not rule.get("value"):
+        return True
+    if rule["kind"] == "buy_limit":
+        return price <= rule["value"] * (1 + RULE_NEAR_PCT / 100)
+    return price >= rule["value"] * (1 - RULE_NEAR_PCT / 100)          # short_limit
 
 
 def pick(calib: dict, max_positions: int) -> list[str]:
@@ -987,10 +1001,12 @@ class BotTrader:
         if s.paper:
             buy_free, short_free = now_s >= self._paper_next["buy"], now_s >= self._paper_next["short"]
 
-        event_soon = self.event_guard(db, server_ms, snap)
+        # the game's buy / short cooldown is shared with the event trader and the user's rules; practice trades have
+        # their own (virtual) cooldowns, so they need not keep the real ones free
+        event_soon = {} if s.paper else self.event_guard(db, server_ms, snap)
         from .automation import ENTRY_ACTION          # automation imports this module; import late to avoid a cycle
-        armed = {ENTRY_ACTION[r["kind"]] for r in db.rules(True)
-                 if r["kind"] in ENTRY_ACTION}                      # the game's cooldown is shared with the user's rules
+        armed = set() if s.paper else {ENTRY_ACTION[r["kind"]] for r in db.rules(True)
+                                       if r["kind"] in ENTRY_ACTION and rule_near(r, prices.get(r["stock_id"]))}
         cd_left = {"buy": ((snap.get("next_buy_ms") or 0) - server_ms) / 1000, "short": ((snap.get("next_short_ms") or 0) - server_ms) / 1000}
         if s.paper:
             cd_left = {k: self._paper_next[k] - now_s for k in cd_left}
