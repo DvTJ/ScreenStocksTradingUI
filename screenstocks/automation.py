@@ -18,7 +18,8 @@ from . import config
 from .bot import BotTrader, load_settings as load_bot_settings
 from .collector import Collector
 from .commands import CommandWriter, action_name, reason_text, status_text, ACTIONS
-from .events import EventTrader, load_settings as load_event_settings
+from .events import EventTrader, load_settings as load_event_settings, reservations
+from .gui import fmt
 from .i18n import keys as text_keys, t, variants
 from .storage import Storage
 
@@ -303,7 +304,8 @@ class AutomationEngine(threading.Thread):
         server_now = (snap.get("server_ms") or 0) + int((time.time() - (st.last_market_read or time.time())) * 1000)
         now = time.time()
 
-        self.events.step(db, load_event_settings(db), live, enabled, server_now, prices, positions, snap)
+        ev_settings = load_event_settings(db)
+        self.events.step(db, ev_settings, live, enabled, server_now, prices, positions, snap)
         try:
             self.bot.step(db, load_bot_settings(db), live, enabled, now, server_now,
                           {s["stock_id"]: s for s in db.stocks()}, positions, snap)
@@ -311,10 +313,24 @@ class AutomationEngine(threading.Thread):
             log.exception("bot error")                    # must not stop the rules below (stop-losses)
         if not rules:
             return
+        # announced pumps / crashes take precedence: hands off their stock, no buy / short that would use the
+        # cooldown the event trader needs (exits on other stocks stay active: sells and covers have no cooldown)
+        owned, reserved = reservations(db, ev_settings, server_now, snap)
 
         for rule in rules:
             rid, sid = rule["id"], rule["stock_id"]
             price, pos = prices.get(sid), positions.get(sid)
+
+            ev = owned.get(sid) or (reserved.get(ENTRY_ACTION[rule["kind"]]) if rule["kind"] in ENTRY_ACTION else None)
+            if ev and rid not in self._pending:
+                self._since.pop(rid, None)
+                if rule["kind"] in TRAILING_ENTRY and rule["extreme"] is not None:
+                    rule["extreme"] = None          # the event moves the price: follow it afresh afterwards
+                    db.update_rule(rid, extreme=None)
+                self._set_status(db, rule, status_msg("rule.st.event_paused" if sid in owned else "rule.st.event_reserved",
+                                                      kind=t(f"event.{ev['direction']}"),
+                                                      time=fmt.clock(ev["scheduled_ms"])))
+                continue
 
             # trailing stop follows the best price while the position is open
             if rule["kind"] == "trailing_stop":

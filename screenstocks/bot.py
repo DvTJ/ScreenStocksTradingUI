@@ -39,7 +39,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from typing import Optional
 
-from .events import FINAL as EVENT_FINAL, load_settings as load_event_settings
+from .events import FINAL as EVENT_FINAL, load_settings as load_event_settings, reservations
 from .commands import ACTIONS, CommandWriter, reason_text, status_text
 from .gui import fmt
 from .i18n import de, en, fr, t
@@ -987,7 +987,7 @@ class BotTrader:
         if s.paper:
             buy_free, short_free = now_s >= self._paper_next["buy"], now_s >= self._paper_next["short"]
 
-        event_soon = self.event_guard(db, server_ms)
+        event_soon = self.event_guard(db, server_ms, snap)
         from .automation import ENTRY_ACTION          # automation imports this module; import late to avoid a cycle
         armed = {ENTRY_ACTION[r["kind"]] for r in db.rules(True)
                  if r["kind"] in ENTRY_ACTION}                      # the game's cooldown is shared with the user's rules
@@ -1002,7 +1002,7 @@ class BotTrader:
             elif self.loss_limit_hit:
                 code, args = "loss_limit", {}
             elif event_soon:
-                code, args = "event_soon", self._event_args(event_soon)
+                code, args = "event_soon", self._event_args(next(iter(event_soon.values())))
             elif armed:
                 code, args = "rule_armed", {"kind": "/".join(sorted(armed))}
             else:
@@ -1010,7 +1010,7 @@ class BotTrader:
             if code != "excluded":                   # you chose that one yourself: no need to say it
                 self._say(sid, code, now_s, **args)
         for sid, action, reason, z in st.orders(now_s, prices, held, buy_free, short_free, blocked):
-            if reason == "entry" and event_soon:             # keep the cooldowns free for the event trader
+            if reason == "entry" and action in event_soon:   # keep that cooldown free for the event trader
                 continue
             if reason == "entry" and sid in no_stock:          # a buy or a short needs shares still available
                 continue
@@ -1065,18 +1065,11 @@ class BotTrader:
         return out
 
     @staticmethod
-    def event_guard(db: Storage, server_ms: int) -> Optional[dict]:
-        """The event the event trader will trade soon, if any: the game's buy / short cooldown is shared by all
-        stocks, so a bot entry now could leave the event trader waiting. ponytail: not simulated (events are too rare
-        in the history)."""
-        es = load_event_settings(db)
-        for ev in db.active_events(server_ms):
-            if ev["phase"] in EVENT_FINAL or not (es.pumps if ev["direction"] == "pump" else es.crashes):
-                continue
-            lead = PUMP_LEAD_S if ev["direction"] == "pump" else es.crash_minutes * 60
-            if ev["scheduled_ms"] - server_ms <= (lead + EVENT_COOLDOWN_S) * 1000:
-                return ev
-        return None
+    def event_guard(db: Storage, server_ms: int, snap: Optional[dict] = None) -> dict:
+        """action -> event: the buy / short cooldowns the event trader needs soon (events.reservations). They are
+        shared by all stocks, so a bot entry of that kind now could leave the event trader waiting.
+        ponytail: not simulated (events are too rare in the history)."""
+        return reservations(db, load_event_settings(db), server_ms, snap)[1]
 
     def _paper_trade(self, db: Storage, s: BotSettings, held: dict, sid: str, action: str, reason: str, price: float,
                      z: Optional[float], now_s: float, stock: dict, snap: dict) -> None:
