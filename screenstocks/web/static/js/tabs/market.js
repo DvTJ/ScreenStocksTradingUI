@@ -245,7 +245,24 @@
     S.series.applyOptions({ lineColor: color, topColor: color + "55", bottomColor: color + "04", priceLineColor: color });
     S.series.setData(res.data);
     q('[data-role="empty"]').classList.toggle("hidden", res.data.length > 0);
+    applyOverlays(res);
+    if (view) S.chart.timeScale().setVisibleRange(view);
+    else { S.chart.priceScale("right").applyOptions({ autoScale: true }); S.chart.timeScale().fitContent(); setZoomed(false); }
+  }
 
+  /** The 60 s refresh: new trades, rules, positions and events; price data, zoom and scroll stay as they are. */
+  async function loadOverlays() {
+    if (!S.selected || S.loading) return;
+    const sid = S.selected, range = S.range;
+    S.lastReload = Date.now();
+    const res = await SS.call("series_overlays", sid, range);
+    if (sid !== S.selected || range !== S.range || S.loading) return;
+    if (res.offset !== S.offset) return loadSeries(true);     // UTC offset changed (DST): chart times shift
+    applyOverlays(res);
+  }
+
+  /** Markers, price lines and events of a series()/series_overlays() result on the current chart data. */
+  function applyOverlays(res) {
     const marks = [];
     for (const n of res.news) {
       marks.push({ time: nearestTime(n.time), position: n.kind === "high" ? "aboveBar" : "belowBar",
@@ -264,8 +281,6 @@
       color: LINE_COLORS[l.kind] || "#f0883e", title: l.title,
     }));
     S.events = res.events;
-    if (view) S.chart.timeScale().setVisibleRange(view);
-    else { S.chart.priceScale("right").applyOptions({ autoScale: true }); S.chart.timeScale().fitContent(); setZoomed(false); }
     renderStats(res.markers.length);
     renderHead();
   }
@@ -461,8 +476,8 @@
       else if (st.state === "rejected" || st.state === "timeout") SS.toast(st.text, "err", 5000);
       S.lastTradeState = st.state;
     }
-    if (Date.now() - S.lastReload > 60_000) loadSeries(true);   // new trades, rules, events
-    else await pollSeries();
+    if (Date.now() - S.lastReload > 60_000) loadOverlays();   // new trades, rules, events
+    await pollSeries();
   }
 
   /** Keyboard: arrow up/down = previous/next stock in the shown order, R = reset the chart zoom. */
