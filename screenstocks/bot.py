@@ -1118,20 +1118,21 @@ class BotTrader:
         if self._pending:
             self._check_pending(db, s, held)
             return
+        # forget bot positions that no longer exist in the game (closed manually) - also while the bot is switched off,
+        # which is when the user takes over (else the bot tab keeps showing it); practice positions are not in the game
+        gone = [] if s.paper or not live else [
+            k for k, h in held.items() if not positions.get(k, {}).get("shares_owned" if h["side"] == "long" else "shares_shorted")]
+        self._missing = {k: self._missing.get(k, now_s) for k in gone}
+        for sid in [k for k in gone if now_s - self._missing[k] >= MISSING_GRACE_S]:      # not a stale / partial read
+            log.warning("bot: %s no longer in the game positions, forgotten (held: %s)", sid, held[sid])
+            held.pop(sid)
+            self._save_held(db, held)
         self.allowed = set(pick(self.calib, max_pos)) if self.calibrated else None
         self.loss_limit_hit = loss_limit_reached(load_results(db), s.loss_limit_pct) if s.enabled else False
         if s.enabled and live and self.allowed is None:
             self._say("", "learning", now_s)
         if not ((enabled or s.paper) and live and s.enabled and self.allowed is not None):
             return
-        # forget bot positions that no longer exist in the game (closed manually); practice positions are not in the game
-        gone = [] if s.paper else [k for k, h in held.items()
-                                   if not positions.get(k, {}).get("shares_owned" if h["side"] == "long" else "shares_shorted")]
-        self._missing = {k: self._missing.get(k, now_s) for k in gone}
-        for sid in [k for k in gone if now_s - self._missing[k] >= MISSING_GRACE_S]:      # not a stale / partial read
-            log.warning("bot: %s no longer in the game positions, forgotten (held: %s)", sid, held[sid])
-            held.pop(sid)
-            self._save_held(db, held)
         why: dict[str, tuple] = {}                  # stock -> (code, args): why the bot stays out of it
         for sid, until in self._blocked.items():
             if until > now_s:

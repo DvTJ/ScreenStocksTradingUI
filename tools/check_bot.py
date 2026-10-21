@@ -295,6 +295,13 @@ def check_learning() -> None:
             trader._closed(db, dict(h), "T", "stop", 12.0, 1000.0)
         fresh = bot.BotTrader(writer=None)
         assert fresh._saved_pauses(db) == {"T": 1000.0 + bot.PAUSE_S}
+        # a position the user closed by hand while the bot is switched off is forgotten too (after the grace time)
+        fresh.calibrated = True
+        bot.BotTrader._save_held(db, {"W": {"side": "short", "entry_price": 10.0, "entry_s": 0, "money": 1}})
+        stocks = {"W": {"stock_id": "W", "last_price": 10.0, "unlocked": 1, "available_shares": 100}}
+        for now in (2000.0, 2000.0 + bot.MISSING_GRACE_S + 1):
+            fresh.step(db, bot.BotSettings(enabled=False), True, True, now, 0, stocks, {}, {})
+        assert bot.BotTrader.held(db) == {}, "stale bot position kept while switched off"
         db.close()
 
 
