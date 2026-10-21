@@ -25,9 +25,13 @@ missing (it ships with Windows 10/11), the app starts the classic interface auto
   disables itself; with **↻ Repeat** it stays active and fires again each time the price leaves the
   trigger zone and reaches it again. Cooldown / rate-limit rejections are retried automatically.
 - **Announced events** – the game announces pumps (~1 min ahead) and crashes (hours ahead). With the switches
-  in the Automation tab (off by default) the app buys after a pump announcement, sells on the pullback from the
-  peak, shorts and covers near the starting price; before a crash it sells and shorts N minutes ahead and covers
-  and buys back on the rebound from the low. All thresholds are adjustable.
+  in the Automation tab (off by default) the app buys after a pump announcement, sells close to the announced
+  target (or on the pullback from the peak), shorts and covers near the starting price; before a crash it sells
+  and shorts N minutes ahead and covers and buys back close to the target (or on the rebound from the low).
+  Events take precedence: rules and the bot leave the event's stock alone and send no buy / short that would use
+  the game's shared cooldown the event trader needs; stop-losses elsewhere keep working. With "Sell other
+  positions for it" (on by default) the other long positions are sold so the pump buy and the crash buy-back get
+  all the cash. All thresholds are adjustable.
 - **Bot** – a mean-reversion trader (off by default): prices swing around a slow average, so it buys when a price is
   far below its moving average and sells when it returns (optional shorts, stop-loss, max hold time, one command at
   a time, respects the game's cooldowns). A backtest replays the recorded history with the same logic. Its settings
