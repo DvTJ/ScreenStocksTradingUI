@@ -28,12 +28,14 @@ import csv
 import json
 import logging
 import math
+import multiprocessing
 import os
 import subprocess
 import sys
 import statistics
 import threading
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from typing import Optional
 
@@ -495,6 +497,29 @@ def calibrate(grids: dict, s: BotSettings, buy_cd_s: float = 85, short_cd_s: flo
     return out
 
 
+def calibrate_db(path, s: BotSettings, buy_cd_s: float = 85, short_cd_s: float = 85) -> dict[str, Calib]:
+    """calibrate() on the last CALIB_WINDOW_S of recorded prices, on its own connection. Top-level with picklable
+    arguments and result: BotTrader runs it in a child process (spawn on Windows)."""
+    db = Storage(path)
+    try:
+        end = db.latest_time_ms() or 0
+        start = max(db.first_time_ms() or 0, end - CALIB_WINDOW_S * 1000)
+        secs, all_grids = load_grids(db, start, end)
+        grids = {k: v for k, v in all_grids.items() if k not in s.excluded}
+        if len(next(iter(grids.values()), ())) < MIN_HISTORY_S:
+            grids = {}
+        return calibrate(grids, s, buy_cd_s, short_cd_s, capital=(db.latest_snapshot() or {}).get("cash") or 10000.0,
+                         limits=stock_limits(db), news=news_index(db, secs), fees=load_fees(db))
+    finally:
+        db.close()
+
+
+def _exit_with_parent() -> None:
+    """Child process: quit as soon as the app is gone, also when it was killed or crashed (else the idle worker
+    would wait for more work forever)."""
+    threading.Thread(target=lambda: (multiprocessing.parent_process().join(), os._exit(1)), daemon=True).start()
+
+
 def pick(calib: dict, max_positions: int) -> list[str]:
     """The most profitable proven stocks, best first."""
     good = sorted((sid for sid, c in calib.items() if c.good), key=lambda sid: -calib[sid].score)
@@ -872,22 +897,17 @@ class BotTrader:
         threading.Thread(target=self._calibrate, args=(db.path, s, cds), daemon=True, name="bot-calib").start()
 
     def _calibrate(self, path, s: BotSettings, cds: tuple) -> None:
-        db = Storage(path)           # own connection: this runs beside the automation thread
         try:
-            end = db.latest_time_ms() or 0
-            start = max(db.first_time_ms() or 0, end - CALIB_WINDOW_S * 1000)
-            secs, all_grids = load_grids(db, start, end)
-            grids = {k: v for k, v in all_grids.items() if k not in s.excluded}
-            if len(next(iter(grids.values()), ())) < MIN_HISTORY_S:
-                grids = {}
-            self.calib = calibrate(grids, s, *cds, capital=(db.latest_snapshot() or {}).get("cash") or 10000.0,
-                                   limits=stock_limits(db), news=news_index(db, secs), fees=load_fees(db))
+            # a few seconds of pure Python: in a child process it does not hold the GIL of the collector, the
+            # automation and the UI. A fresh process per calibration (~0.5 s start every recalib_min minutes) leaves
+            # nothing idle in between and nothing to repair when one dies (BrokenProcessPool is just a failed calibration).
+            with ProcessPoolExecutor(max_workers=1, initializer=_exit_with_parent) as pool:
+                self.calib = pool.submit(calibrate_db, path, s, *cds).result()
             log.info("bot calibrated: %s", {k: (c.params.tau_s, c.params.entry_z, round(c.score, 1), c.n)
                                             for k, c in self.calib.items()})
         except Exception:
             log.exception("bot calibration failed")
         finally:
-            db.close()
             self.calibrated, self.calibrating = True, False
 
     # ------------------------------------------------------------------------ step
