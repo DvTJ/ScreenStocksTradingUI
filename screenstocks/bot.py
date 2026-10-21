@@ -56,6 +56,8 @@ REJECT_BLOCK_S = 30.0
 FEE_KEY = "bot_fees"
 FEE_SAMPLES = 20             # recent real costs kept per stock
 FEE_MIN_SAMPLES = 3          # fewer than this: the default FEE_PCT
+FEE_MAX_PCT = 10.0           # a measured fill cost beyond this is a measuring error, not a cost
+EXIT_ORDER = {"stop": 0, "timeout": 1, "target": 2}
 MISSING_GRACE_S = 5.0         # a held position must be absent from the game this long before the bot forgets it
 PAUSE_AFTER_LOSSES = 2       # consecutive losing trades on one stock ...
 PAUSE_S = 900                # ... pause it this long
@@ -70,7 +72,8 @@ LATENCY_MAX_S = 10
 # Per-stock refinement of more parameters: chosen on the older part, kept only if they also win on the newest part.
 VALIDATE_SHARE = 1 / 3
 REFINE_MARGIN = 0.10         # ... by at least this share of the unrefined validation score
-REFINE = (("stop_pct", (8.0, 10.0, 15.0, 20.0)), ("exit_z", (0.05, 0.1, 0.2)), ("confirm_s", (4, 6, 8)))
+# exit_z < 0 = close past the average: the noise overshoots it (live: +9 to +75 % more within a minute of the exits)
+REFINE = (("stop_pct", (8.0, 10.0, 15.0)), ("exit_z", (0.1, 0.0, -0.25, -0.5, -0.75)), ("confirm_s", (4, 6, 8)))
 
 LEVELS = ("simple", "medium", "advanced")
 SLIPPAGE = 1.5               # a stop may fill this much further than stop_pct (price jumps, latency)
@@ -335,6 +338,7 @@ class Strategy:
                 reason = "target"
             if reason:
                 out.append((sid, "sell" if long_ else "cover", reason, z))
+        out.sort(key=lambda o: EXIT_ORDER[o[2]])          # one command per step: a stop goes before a target
 
         slots = self.max_positions - len(held)
         best = {"buy": None, "short": None}
@@ -529,8 +533,11 @@ def refine(run, best: Calib, g: list) -> Calib:
                 if c.score > cur:
                     p, cur = c.params, c.score
     if p != best.params:
-        new, old = run(p, test).score, run(best.params, test).score
-        if new > old + abs(old) * REFINE_MARGIN:         # clearly better, not just luckier on a short stretch
+        new, old = run(p, test), run(best.params, test)
+        loss = lambda c: c.profit - c.score             # noqa: E731   the worst trade's loss (score = profit - it)
+        # clearly better, not just luckier on a short stretch - and no bigger single loss (exits past the average
+        # hold longer, a spike can then cost far more than the extra gain)
+        if new.score > old.score + abs(old.score) * REFINE_MARGIN and loss(new) <= loss(old):
             return run(p)
     return best
 
@@ -697,12 +704,17 @@ def load_fees(db: Storage) -> dict:
     and the median cost of selling (the game's sell spread, ~1.9 %, is about twice the buy one, ~0.9 %). Measured on
     $PLAIN with 5-10 M shares: cost = 0.6 + 0.04 / M shares in, 1.7 + 0.03 / M shares out, so a smaller stake saves
     almost nothing. ponytail: size is not modelled; a different stake needs fresh fills."""
-    return {sid: min(4.0, max(0.3, (statistics.median(v["in"]) + statistics.median(v["out"])) / 2))
-            for sid, v in _fee_raw(db).items() if min(len(v.get("in", ())), len(v.get("out", ()))) >= FEE_MIN_SAMPLES}
+    ok = lambda xs: [x for x in xs or () if abs(x) <= FEE_MAX_PCT]  # noqa: E731   (also drops older outliers)
+    raw = {sid: (ok(v.get("in")), ok(v.get("out"))) for sid, v in _fee_raw(db).items()}
+    return {sid: min(4.0, max(0.3, (statistics.median(i) + statistics.median(o)) / 2))
+            for sid, (i, o) in raw.items() if min(len(i), len(o)) >= FEE_MIN_SAMPLES}
 
 
 def record_fee(db: Storage, sid: str, side: str, cost_pct: float) -> None:
-    """Remember what one real fill cost versus the signal price (positive = worse); side is "in" or "out"."""
+    """Remember what one real fill cost versus the signal price (positive = worse); side is "in" or "out".
+    Implausible values (a position's average price mixed with an older fill, a fast tick) are not learned."""
+    if abs(cost_pct) > FEE_MAX_PCT:
+        return
     raw = _fee_raw(db)
     v = raw.setdefault(sid, {"in": [], "out": []})
     v[side] = (v.get(side, []) + [round(cost_pct, 3)])[-FEE_SAMPLES:]
@@ -1033,7 +1045,9 @@ class BotTrader:
 
     def step(self, db: Storage, s: BotSettings, live: bool, enabled: bool, now_s: float, server_ms: int,
              stocks: dict, positions: dict, snap: dict) -> None:
-        self._server_ms = server_ms                 # signal time of an order sent in this step (measured latency)
+        # when the price acted on in this step was written: the game stamps command results on that same clock (the
+        # server time runs ~1 s ahead of it), and price -> fill is the delay the simulation's latency stands for
+        self._server_ms = snap.get("written_ms") or 0
         base, max_pos, shorts = effective(s)
         st = self.strategy
         st.default, st.max_positions, st.shorts = base, max_pos, shorts
@@ -1094,9 +1108,9 @@ class BotTrader:
         for sid, x in stocks.items():
             if not x["unlocked"]:
                 why.setdefault(sid, ("locked", {}))
-        blocked = set(why)
-        self.last_check_ms, self.watching = int(time.time() * 1000), len([x for x in prices if x not in s.excluded])
         no_stock = {sid for sid, x in stocks.items() if not (x["available_shares"] or 0) > 0}
+        blocked = set(why) | no_stock                # ranked out up front: else the best signal, if unbuyable, wastes the side
+        self.last_check_ms, self.watching = int(time.time() * 1000), len([x for x in prices if x not in s.excluded])
         buy_free = (snap.get("next_buy_ms") or 0) <= server_ms
         short_free = (snap.get("next_short_ms") or 0) <= server_ms
         if s.paper:
@@ -1244,7 +1258,7 @@ class BotTrader:
                 return
             done_ms = res["finished_ms"] or res["received_ms"]
             if done_ms and pd.get("server_ms") and 0 < done_ms - pd["server_ms"] < LATENCY_MAX_S * 3000:
-                record_latency(db, (done_ms - pd["server_ms"]) / 1000)      # signal (server time) -> filled
+                record_latency(db, (done_ms - pd["server_ms"]) / 1000)      # price written -> filled
             if sent.action in ("buy", "short"):
                 real = self._real_entry_price(db, sent, price)
                 record_fee(db, sid, "in", (real / price - 1) * 100 * (1 if sent.action == "buy" else -1))
@@ -1261,7 +1275,10 @@ class BotTrader:
                 real = self._real_exit_price(db, sid, h, price, pd["pos_ms"])
                 if real != price:
                     record_fee(db, sid, "out", (price / real - 1) * 100)
-                ret = self._closed(db, held.pop(sid, None), sid, pd["reason"], real, now_s)
+                # a short's exit keeps the signal price (no real fill known): charge the cover's cost, else the
+                # learning (and the loss limit) see shorts better than they are
+                cover_fee = self.fees.get(sid, FEE_PCT) if h and h["side"] == "short" and real == price else 0.0
+                ret = self._closed(db, held.pop(sid, None), sid, pd["reason"], real, now_s, fee_pct=cover_fee)
                 if ret is not None:
                     record_live(db, sid, ret)               # what this stock really makes: the next calibration learns it
                 self._save_held(db, held)
