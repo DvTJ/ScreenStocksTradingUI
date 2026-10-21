@@ -40,9 +40,13 @@ def _points(rows, off: int) -> list[dict]:
     return out
 
 
+SPARK_MS, SPARK_BUCKET_MS = 30 * 60_000, 30_000      # watchlist sparkline: 30 min of 30 s closes
+
+
 class MarketApi:
     _trade: Optional[dict] = None       # command in flight: SentCommand, known result ids, send time
     _trade_result: Optional[dict] = None
+    _sparks: dict = {}                  # stock id -> (t_ref, open bucket start, [(start, close)] of closed buckets)
 
     # ------------------------------------------------------------------ helpers
 
@@ -54,6 +58,27 @@ class MarketApi:
         if settings_mod.assign_colors(self._settings, ids):
             settings_mod.save(self._settings)
         return {sid: self._settings.stock_colors[sid] for sid in ids}
+
+    def _spark(self, db, sid: str, t_ref: int, cache: dict) -> list[float]:
+        """Prices of db.bucket_closes(sid, t_ref - SPARK_MS, t_ref, SPARK_BUCKET_MS), closed buckets from the last call.
+
+        Only the partly covered oldest bucket and the buckets since the last call are read. The collector only
+        adds newer prices and compact() keeps the last row of every 10 s bucket, so a closed bucket never changes.
+        """
+        b = SPARK_BUCKET_MS
+        since = t_ref - SPARK_MS
+        edge = since - since % b + b                # first bucket that lies fully inside the window
+        open_ = t_ref - t_ref % b
+        old = self._sparks.get(sid)
+        if old and old[0] <= t_ref and old[1] >= edge:      # else first call, clock went back or jumped > window
+            hi, closed = old[1], [c for c in old[2] if c[0] >= edge]
+        else:
+            hi, closed = edge, []
+        new = db.bucket_closes(sid, hi, t_ref, b)
+        closed += [c for c in new if c[0] < open_]
+        cache[sid] = (t_ref, open_, closed)
+        head = db.bucket_closes(sid, since, edge - 1, b)
+        return [p for _, p in head + closed] + [p for s, p in new if s >= open_]
 
     # ---------------------------------------------------------------- watchlist
 
@@ -69,7 +94,7 @@ class MarketApi:
             known = {s["stock_id"] for s in stocks}
             stocks += [{"stock_id": sid} for sid in db.stock_ids() if sid not in known]
             colors = self._colors([s["stock_id"] for s in stocks])
-            rows = []
+            rows, sparks = [], {}
             for st in stocks:
                 sid = st["stock_id"]
                 last = db.latest_price(sid)
@@ -79,7 +104,7 @@ class MarketApi:
                 for key, secs in (("d1", 60), ("d5", 300), ("d15", 900), ("d60", 3600)):
                     old = db.price_at(sid, t_ref - secs * 1000) if t_ref else None
                     deltas[key] = (price / old - 1) * 100 if price and old else None
-                spark = [p for _, p in db.bucket_closes(sid, t_ref - 30 * 60_000, t_ref, 30_000)] if t_ref else []
+                spark = self._spark(db, sid, t_ref, sparks) if t_ref else []
                 pos = positions.get(sid, {})
                 owned, avg = pos.get("shares_owned", 0.0), pos.get("avg_buy_price", 0.0)
                 shorted, avg_s = pos.get("shares_shorted", 0.0), pos.get("avg_short_price", 0.0)
@@ -91,6 +116,7 @@ class MarketApi:
                                  avail=st.get("available_shares"), maxvol=st.get("max_volume"),
                                  unlocked=bool(st.get("unlocked", 1)), owned=owned, avg=avg, shorted=shorted,
                                  avg_short=avg_s, pl=pl, div=div))
+            self._sparks = sparks                   # drops stocks that are gone or have no prices
             log = [dict(id=r["id"], time=r["finished_ms"] or r["received_ms"], stock=r["stock_id"],
                         action=action_label(r["action"]), pct=r["percent"], status=r["status"],
                         status_text=status_text(r["status"]), reason=reason_text(r["reason"]))
