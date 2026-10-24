@@ -5,8 +5,10 @@
   const { t, fmt, esc, cls } = SS;
   const S = { el: null, data: null, editId: null, previewTimer: null, sigRules: "", sigEvents: "", sigLog: "", eventsInit: false };
   const q = (sel) => S.el.querySelector(sel);
-  const PUMP = ["pump_buy_pct", "pump_drop_pct", "pump_start_share", "pump_safety_s", "pump_short_pct", "pump_cover_pct", "pump_cover_max_s"];
-  const CRASH = ["crash_minutes", "crash_short_pct", "crash_rise_pct", "crash_safety_s", "crash_rebuy_pct"];
+  const PUMP = ["pump_buy_pct", "pump_drop_pct", "pump_start_share", "pump_target_share", "pump_safety_s", "pump_short_pct",
+    "pump_cover_pct", "pump_cover_max_s"];
+  const CRASH = ["crash_minutes", "crash_short_pct", "crash_target_pct", "crash_rise_pct", "crash_safety_s", "crash_rebuy_pct"];
+  const SWITCHES = ["pumps", "crashes", "fund_events"];
 
   // ------------------------------------------------------------------ layout
   function mount(el) {
@@ -65,6 +67,7 @@
             <div class="ev-switches">
               <label class="switch"><input type="checkbox" data-ev="pumps"><span class="track"></span>${esc(t("event.switch_pumps"))}</label>
               <label class="switch"><input type="checkbox" data-ev="crashes"><span class="track"></span>${esc(t("event.switch_crashes"))}</label>
+              <label class="switch"><input type="checkbox" data-ev="fund_events"><span class="track"></span>${esc(t("event.switch_fund_events"))}</label>
             </div>
             <details class="params"><summary>${esc(t("web.auto.params"))}</summary>
               <div class="pgrid"><h4>${esc(t("event.pump_params"))}</h4>${PUMP.map(param).join("")}
@@ -224,7 +227,7 @@
 
   // ------------------------------------------------------------------ events
   function fillEventSettings(s) {
-    for (const k of ["pumps", "crashes"]) q(`[data-ev="${k}"]`).checked = !!s[k];
+    for (const k of SWITCHES) q(`[data-ev="${k}"]`).checked = !!s[k];
     for (const k of [...PUMP, ...CRASH]) {
       const inp = q(`[data-param="${k}"]`);
       if (document.activeElement !== inp) inp.value = plain(s[k], 2);
@@ -233,7 +236,7 @@
 
   async function saveEvents() {
     const values = {};
-    for (const k of ["pumps", "crashes"]) values[k] = q(`[data-ev="${k}"]`).checked;
+    for (const k of SWITCHES) values[k] = q(`[data-ev="${k}"]`).checked;
     for (const k of [...PUMP, ...CRASH]) values[k] = q(`[data-param="${k}"]`).value;
     const saved = await SS.call("save_events", values);
     fillEventSettings(saved);
@@ -321,7 +324,7 @@
     fillSelect(f("kind"), d.kinds);
     fillSelect(f("side"), d.sides);
     if (!S.eventsInit) { fillEventSettings(d.event_settings); S.eventsInit = true; onFormChange(); }
-    else for (const k of ["pumps", "crashes"]) q(`[data-ev="${k}"]`).checked = !!d.event_settings[k];
+    else for (const k of SWITCHES) q(`[data-ev="${k}"]`).checked = !!d.event_settings[k];
     renderRules(d.rules);
     renderEvents(d.events, d.now);
     renderLog(d.log);

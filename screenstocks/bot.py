@@ -28,16 +28,18 @@ import csv
 import json
 import logging
 import math
+import multiprocessing
 import os
 import subprocess
 import sys
 import statistics
 import threading
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from typing import Optional
 
-from .events import FINAL as EVENT_FINAL, load_settings as load_event_settings
+from .events import FINAL as EVENT_FINAL, load_settings as load_event_settings, reservations
 from .commands import ACTIONS, CommandWriter, reason_text, status_text
 from .gui import fmt
 from .i18n import de, en, fr, t
@@ -54,10 +56,27 @@ REJECT_BLOCK_S = 30.0
 FEE_KEY = "bot_fees"
 FEE_SAMPLES = 20             # recent real costs kept per stock
 FEE_MIN_SAMPLES = 3          # fewer than this: the default FEE_PCT
+FEE_MAX_PCT = 10.0           # a measured fill cost beyond this is a measuring error, not a cost
+EXIT_ORDER = {"stop": 0, "timeout": 1, "target": 2}
+STOP_CONFIRM = True          # a stop-loss must last confirm_s (a one-tick spike mostly comes back) ...
+STOP_HARD = 2.0              # ... unless the loss is beyond this many times stop_pct
 MISSING_GRACE_S = 5.0         # a held position must be absent from the game this long before the bot forgets it
 PAUSE_AFTER_LOSSES = 2       # consecutive losing trades on one stock ...
 PAUSE_S = 900                # ... pause it this long
+PAUSE_KEY = "bot_pause"      # stock -> pause end (epoch s), so a restart does not lift it
 MAX_TRADES_KEPT = 500
+# Self-learning from the bot's own real orders (practice fills are instant, so they teach nothing):
+LEARN_KEY = "bot_learn"      # {"latency": [s, ...], "live": {stock: [return %, ...]}}
+LEARN_TRADES = 30            # recent real trades kept per stock
+LEARN_K = 5                  # this many real trades weigh as much as the replay's expectation (shrinkage)
+LEARN_MIN_TRUST = 0.25       # smallest stake factor of a stock that does worse live than in the replay
+LATENCY_SAMPLES = 20         # recent signal -> fill delays kept
+LATENCY_MAX_S = 10
+# Per-stock refinement of more parameters: chosen on the older part, kept only if they also win on the newest part.
+VALIDATE_SHARE = 1 / 3
+REFINE_MARGIN = 0.10         # ... by at least this share of the unrefined validation score
+# exit_z < 0 = close past the average: the noise overshoots it (live: +9 to +75 % more within a minute of the exits)
+REFINE = (("stop_pct", (8.0, 10.0, 15.0)), ("exit_z", (0.1, 0.0, -0.25, -0.5, -0.75)), ("confirm_s", (4, 6, 8)))
 
 LEVELS = ("simple", "medium", "advanced")
 SLIPPAGE = 1.5               # a stop may fill this much further than stop_pct (price jumps, latency)
@@ -72,6 +91,7 @@ ENTRY_Z_STEPS = (-0.5, 0.0, 0.5, 1.0)    # tried around the caution preset's ent
 EVENT_COOLDOWN_S = 90         # buy / short cooldown the event trader needs free (it is shared by all stocks)
 EVENT_AFTER_S = {"pump": 180, "crash": 900}     # the bot stays out of the stock this long after an event starts
 PUMP_LEAD_S = 60             # the event trader buys a pump about this long before it
+RULE_NEAR_PCT = 10.0         # a user's limit rule this close to its price keeps the bot's entries of its kind back
 JUMP_FORCE = 1.5             # a jump bigger than this many times the stop's reach is always budgeted
 JUMP_Q = 0.97                # quantile of the one-tick moves used as the stock's typical big jump
 THINK_REPEAT_S = 60          # a stock's thought is repeated at most this often while it does not change
@@ -198,7 +218,8 @@ def stake_pct(trade_pct: int, z: float, p: Params, cash: float, free: float, pri
     pct = size_pct(trade_pct, z, p.entry_z)
     biggest = trade_money(price, 100, free, available, buying)         # money a 100 % order would move
     if biggest > 0:
-        worst = max(p.stop_pct * SLIPPAGE, p.jump_pct)      # a stop cannot protect against a bigger one-tick jump
+        reach = max(SLIPPAGE, STOP_HARD) if STOP_CONFIRM else SLIPPAGE      # a confirmed stop may run to the hard limit
+        worst = max(p.stop_pct * reach, p.jump_pct)         # a stop cannot protect against a bigger one-tick jump
         allowed = cash * p.max_loss_pct / 100 / (worst / 100)
         pct = min(pct, math.floor(100 * allowed / biggest + 1e-9))
         if pct < 1:
@@ -314,13 +335,20 @@ class Strategy:
             pnl = (price / h["entry_price"] - 1) * (1 if long_ else -1) * 100
             reason = None
             if pnl <= -p.stop_pct:
-                reason = "stop"
-            elif now - h["entry_s"] >= p.max_hold_s:
-                reason = "timeout"
-            elif z is not None and (z >= -p.exit_z if long_ else z <= p.exit_z):
-                reason = "target"
+                # the noise spikes and comes back (that is what the bot trades): a stop waits confirm_s like an entry,
+                # except beyond STOP_HARD x the stop, where it is no blip any more; meanwhile no other exit
+                since = h.setdefault("stop_since", now)
+                if not STOP_CONFIRM or pnl <= -p.stop_pct * STOP_HARD or now - since + 1 >= p.confirm_s:
+                    reason = "stop"
+            else:
+                h.pop("stop_since", None)
+                if now - h["entry_s"] >= p.max_hold_s:
+                    reason = "timeout"
+                elif z is not None and (z >= -p.exit_z if long_ else z <= p.exit_z):
+                    reason = "target"
             if reason:
                 out.append((sid, "sell" if long_ else "cover", reason, z))
+        out.sort(key=lambda o: EXIT_ORDER[o[2]])          # one command per step: a stop goes before a target
 
         slots = self.max_positions - len(held)
         best = {"buy": None, "short": None}
@@ -462,6 +490,10 @@ class Calib:
     n: int
     win_rate: float
     profit: float = 0.0  # net profit (money), without the worst-trade penalty
+    avg_ret: float = 0.0  # mean return per simulated trade (%), what a live trade is expected to make
+    trust: float = 1.0   # stake factor learned from the stock's real trades (apply_learning)
+    side_avg: dict = field(default_factory=dict)     # "long" / "short" -> mean simulated return (%) of that side
+    side_trust: dict = field(default_factory=dict)   # "long" / "short" -> stake factor of that side's real trades
 
     @property
     def good(self) -> bool:
@@ -470,17 +502,22 @@ class Calib:
 
 def calibrate(grids: dict, s: BotSettings, buy_cd_s: float = 85, short_cd_s: float = 85, capital: float = 10000.0,
               limits: Optional[dict] = None, news: Optional[dict] = None,
-              fees: Optional[dict] = None) -> dict[str, Calib]:
-    """Best (tau_s, entry_z) per stock by net profit (in money) on the price grids."""
+              fees: Optional[dict] = None, latency_s: Optional[int] = None) -> dict[str, Calib]:
+    """Best (tau_s, entry_z) per stock by net profit (in money) on the price grids, then stop / exit / confirmation
+    refined per stock where that also wins on the newest part. latency_s: the measured order delay (default LATENCY_S)."""
     base, _, shorts = effective(s)
     out = {}
     for sid, g in grids.items():
-        def run(p):
-            r = simulate({sid: g}, {sid: p}, s.trade_pct, 1, shorts, buy_cd_s, short_cd_s, capital=capital,
-                         limits=limits, news=news, fees=fees)
+        def run(p, grid=g):
+            r = simulate({sid: grid}, {sid: p}, s.trade_pct, 1, shorts, buy_cd_s, short_cd_s, latency_s=latency_s,
+                         capital=capital, limits=limits, news=news, fees=fees)
             profit = r["end"] - capital
             worst = min((x["pnl"] for x in r["trades"]), default=0.0)
-            return Calib(p, profit - abs(min(0.0, worst)), r["n"], r["win_rate"], profit)
+            rets = [x["ret"] for x in r["trades"]]
+            side_avg = {sd: statistics.mean(v) for sd in ("long", "short")
+                        if (v := [x["ret"] for x in r["trades"] if x["side"] == sd])}
+            return Calib(p, profit - abs(min(0.0, worst)), r["n"], r["win_rate"], profit,
+                         statistics.mean(rets) if rets else 0.0, side_avg=side_avg)
 
         jump = jump_p99(g)
         tries = [run(replace(base, tau_s=tau, entry_z=round(base.entry_z + dz, 2), jump_pct=jump))
@@ -491,8 +528,139 @@ def calibrate(grids: dict, s: BotSettings, buy_cd_s: float = 85, short_cd_s: flo
             c = run(replace(best.params, jump_pct=0.0))
             if c.score > best.score:
                 best = c
-        out[sid] = best
+        out[sid] = refine(run, best, g)
     return out
+
+
+def refine(run, best: Calib, g: list) -> Calib:
+    """Coordinate search of the REFINE parameters on the older part of the grid; the result replaces `best` only when
+    it also scores better on the newest VALIDATE_SHARE (against noise that fits only the past)."""
+    cut = int(len(g) * (1 - VALIDATE_SHARE))
+    if cut < MIN_HISTORY_S or len(g) - cut < MIN_HISTORY_S // 2:
+        return best
+    train, test = g[:cut], g[cut:]
+    p, cur = best.params, run(best.params, train).score
+    for name, steps in REFINE:
+        for v in steps:
+            if v != getattr(p, name):
+                c = run(replace(p, **{name: type(getattr(p, name))(v)}), train)
+                if c.score > cur:
+                    p, cur = c.params, c.score
+    if p != best.params:
+        new, old = run(p, test), run(best.params, test)
+        loss = lambda c: c.profit - c.score             # noqa: E731   the worst trade's loss (score = profit - it)
+        # clearly better, not just luckier on a short stretch - and no bigger single loss (exits past the average
+        # hold longer, a spike can then cost far more than the extra gain)
+        if new.score > old.score + abs(old.score) * REFINE_MARGIN and loss(new) <= loss(old):
+            return run(p)
+    return best
+
+
+# ------------------------------------------------------------------------------ self-learning
+
+def _learn_raw(db: Storage) -> dict:
+    try:
+        raw = json.loads(db.get_setting(LEARN_KEY, "{}"))
+    except ValueError:
+        raw = {}
+    return {"latency": list(raw.get("latency") or []), "live": dict(raw.get("live") or {})}
+
+
+def record_live(db: Storage, sid: str, ret: float, side: str = "") -> None:
+    """Remember the return and side of one real trade of a stock (apply_learning weighs it against the replay)."""
+    raw = _learn_raw(db)
+    raw["live"][sid] = (raw["live"].get(sid, []) + [[round(ret, 3), side]])[-LEARN_TRADES:]
+    db.set_setting(LEARN_KEY, json.dumps(raw))
+
+
+def _live_trades(entries: list) -> list[tuple[float, str]]:
+    """(return, side) of the stored real trades; trades stored before the side was kept have side ""."""
+    return [(e, "") if isinstance(e, (int, float)) else (e[0], e[1]) for e in entries]
+
+
+def record_latency(db: Storage, seconds: float) -> None:
+    """Remember one real signal -> fill delay (game server time)."""
+    raw = _learn_raw(db)
+    raw["latency"] = (raw["latency"] + [round(seconds, 2)])[-LATENCY_SAMPLES:]
+    db.set_setting(LEARN_KEY, json.dumps(raw))
+
+
+def measured_latency(db: Storage) -> Optional[int]:
+    """The median measured order delay in whole seconds (the simulation grid), None until FEE_MIN_SAMPLES orders."""
+    lat = _learn_raw(db)["latency"]
+    if len(lat) < FEE_MIN_SAMPLES:
+        return None
+    return min(LATENCY_MAX_S, max(1, math.ceil(statistics.median(lat))))
+
+
+def live_trust(c: Calib, rets: list) -> float:
+    """Stake factor of a stock: its real trades blended with the replay's expectation, the more real trades the more
+    they count. 0 = the blend expects a loss (the stock is dropped); below 1 = it does worse live than replayed.
+    Never above 1: the user's trade % stays the maximum."""
+    return _trust(c.avg_ret, rets)
+
+
+def _trust(replayed: float, rets: list) -> float:
+    if not rets or replayed <= 0:
+        return 1.0
+    w = len(rets) / (len(rets) + LEARN_K)
+    expected = w * statistics.mean(rets) + (1 - w) * replayed
+    return 0.0 if expected <= 0 else min(1.0, max(LEARN_MIN_TRUST, expected / replayed))
+
+
+def apply_learning(calib: dict, live: dict) -> dict:
+    """The calibration corrected by the real trades: scores scaled by the trust (a distrusted stock ranks lower, a
+    stock expected to lose is no longer good), plus a trust per side - a stock whose real shorts lose stops shorting
+    (stake 0) but keeps buying, and the other way round."""
+    out = {}
+    for sid, c in calib.items():
+        trades = _live_trades(live.get(sid, []))
+        # trades stored before the side was kept count for both sides; the stock ranks by its better side
+        side_trust = {sd: _trust(c.side_avg.get(sd, c.avg_ret), [r for r, s in trades if s in (sd, "")])
+                      for sd in ("long", "short")}
+        trust = max(side_trust.values())
+        out[sid] = replace(c, trust=trust, side_trust=side_trust,
+                           score=c.score * trust if trust > 0 else -abs(c.score) - 1.0)
+    return out
+
+
+def calibrate_db(path, s: BotSettings, buy_cd_s: float = 85, short_cd_s: float = 85) -> dict[str, Calib]:
+    """calibrate() on the last CALIB_WINDOW_S of recorded prices, on its own connection, with the measured order delay
+    and corrected by the real trades (self-learning). Top-level with picklable arguments and result: BotTrader runs
+    it in a child process (spawn on Windows)."""
+    db = Storage(path)
+    try:
+        end = db.latest_time_ms() or 0
+        start = max(db.first_time_ms() or 0, end - CALIB_WINDOW_S * 1000)
+        secs, all_grids = load_grids(db, start, end)
+        grids = {k: v for k, v in all_grids.items() if k not in s.excluded}
+        if len(next(iter(grids.values()), ())) < MIN_HISTORY_S:
+            grids = {}
+        calib = calibrate(grids, s, buy_cd_s, short_cd_s, capital=(db.latest_snapshot() or {}).get("cash") or 10000.0,
+                          limits=stock_limits(db), news=news_index(db, secs), fees=load_fees(db),
+                          latency_s=measured_latency(db))
+        return apply_learning(calib, _learn_raw(db)["live"])
+    finally:
+        db.close()
+
+
+def _exit_with_parent() -> None:
+    """Child process: quit as soon as the app is gone, also when it was killed or crashed (else the idle worker
+    would wait for more work forever)."""
+    threading.Thread(target=lambda: (multiprocessing.parent_process().join(), os._exit(1)), daemon=True).start()
+
+
+def rule_near(rule: dict, price: Optional[float]) -> bool:
+    """A user's entry rule that may fire soon, so the bot keeps the game cooldown of its kind free: a limit within
+    RULE_NEAR_PCT of its price, a trailing entry once it follows the price. A limit buy far below the price would
+    otherwise stop every bot buy for good."""
+    if rule["kind"] in ("trailing_buy", "trailing_short"):
+        return rule.get("extreme") is not None
+    if not price or not rule.get("value"):
+        return True
+    if rule["kind"] == "buy_limit":
+        return price <= rule["value"] * (1 + RULE_NEAR_PCT / 100)
+    return price >= rule["value"] * (1 - RULE_NEAR_PCT / 100)          # short_limit
 
 
 def pick(calib: dict, max_positions: int) -> list[str]:
@@ -565,12 +733,17 @@ def load_fees(db: Storage) -> dict:
     and the median cost of selling (the game's sell spread, ~1.9 %, is about twice the buy one, ~0.9 %). Measured on
     $PLAIN with 5-10 M shares: cost = 0.6 + 0.04 / M shares in, 1.7 + 0.03 / M shares out, so a smaller stake saves
     almost nothing. ponytail: size is not modelled; a different stake needs fresh fills."""
-    return {sid: min(4.0, max(0.3, (statistics.median(v["in"]) + statistics.median(v["out"])) / 2))
-            for sid, v in _fee_raw(db).items() if min(len(v.get("in", ())), len(v.get("out", ()))) >= FEE_MIN_SAMPLES}
+    ok = lambda xs: [x for x in xs or () if abs(x) <= FEE_MAX_PCT]  # noqa: E731   (also drops older outliers)
+    raw = {sid: (ok(v.get("in")), ok(v.get("out"))) for sid, v in _fee_raw(db).items()}
+    return {sid: min(4.0, max(0.3, (statistics.median(i) + statistics.median(o)) / 2))
+            for sid, (i, o) in raw.items() if min(len(i), len(o)) >= FEE_MIN_SAMPLES}
 
 
 def record_fee(db: Storage, sid: str, side: str, cost_pct: float) -> None:
-    """Remember what one real fill cost versus the signal price (positive = worse); side is "in" or "out"."""
+    """Remember what one real fill cost versus the signal price (positive = worse); side is "in" or "out".
+    Implausible values (a position's average price mixed with an older fill, a fast tick) are not learned."""
+    if abs(cost_pct) > FEE_MAX_PCT:
+        return
     raw = _fee_raw(db)
     v = raw.setdefault(sid, {"in": [], "out": []})
     v[side] = (v.get(side, []) + [round(cost_pct, 3)])[-FEE_SAMPLES:]
@@ -806,6 +979,8 @@ class BotTrader:
         self._calib_at = 0.0
         self._calib_key = None
         self._pending: Optional[dict] = None
+        self._server_ms = 0
+        self._pauses_loaded = False
         self._missing: dict[str, float] = {}    # sid -> local time its position was first seen missing
         self._blocked: dict[str, float] = {}    # sid -> local time until which entries are skipped
         self._streak: dict[str, int] = {}       # consecutive losing trades per stock
@@ -872,22 +1047,18 @@ class BotTrader:
         threading.Thread(target=self._calibrate, args=(db.path, s, cds), daemon=True, name="bot-calib").start()
 
     def _calibrate(self, path, s: BotSettings, cds: tuple) -> None:
-        db = Storage(path)           # own connection: this runs beside the automation thread
         try:
-            end = db.latest_time_ms() or 0
-            start = max(db.first_time_ms() or 0, end - CALIB_WINDOW_S * 1000)
-            secs, all_grids = load_grids(db, start, end)
-            grids = {k: v for k, v in all_grids.items() if k not in s.excluded}
-            if len(next(iter(grids.values()), ())) < MIN_HISTORY_S:
-                grids = {}
-            self.calib = calibrate(grids, s, *cds, capital=(db.latest_snapshot() or {}).get("cash") or 10000.0,
-                                   limits=stock_limits(db), news=news_index(db, secs), fees=load_fees(db))
-            log.info("bot calibrated: %s", {k: (c.params.tau_s, c.params.entry_z, round(c.score, 1), c.n)
-                                            for k, c in self.calib.items()})
+            # a few seconds of pure Python: in a child process it does not hold the GIL of the collector, the
+            # automation and the UI. A fresh process per calibration (~0.5 s start every recalib_min minutes) leaves
+            # nothing idle in between and nothing to repair when one dies (BrokenProcessPool is just a failed calibration).
+            with ProcessPoolExecutor(max_workers=1, initializer=_exit_with_parent) as pool:
+                self.calib = pool.submit(calibrate_db, path, s, *cds).result()
+            log.info("bot calibrated (tau, z, stop, exit, confirm, score, n, trust): %s",
+                     {k: (c.params.tau_s, c.params.entry_z, c.params.stop_pct, c.params.exit_z, c.params.confirm_s,
+                          round(c.score, 1), c.n, round(c.trust, 2)) for k, c in self.calib.items()})
         except Exception:
             log.exception("bot calibration failed")
         finally:
-            db.close()
             self.calibrated, self.calibrating = True, False
 
     # ------------------------------------------------------------------------ step
@@ -897,8 +1068,28 @@ class BotTrader:
         """The expected move back must cover the measured round trip cost of this stock."""
         return replace(p, min_edge_pct=max(p.min_edge_pct, 2 * fee))
 
+    def _stake_pct(self, sid: str, *args) -> int:
+        """stake_pct() scaled by what the stock's real trades of this side taught (1 while unknown); args as stake_pct,
+        whose last one is `buying`."""
+        c = (self.calib or {}).get(sid)
+        trust = c.side_trust.get("long" if args[-1] else "short", c.trust) if c else 1.0
+        return math.floor(stake_pct(*args) * trust + 1e-9)
+
+    @staticmethod
+    def _saved_pauses(db: Storage) -> dict:
+        try:
+            return {k: float(v) for k, v in json.loads(db.get_setting(_key(db, PAUSE_KEY), "{}")).items()}
+        except (ValueError, TypeError, AttributeError):
+            return {}
+
     def step(self, db: Storage, s: BotSettings, live: bool, enabled: bool, now_s: float, server_ms: int,
              stocks: dict, positions: dict, snap: dict) -> None:
+        # when the price acted on in this step was written: the game stamps command results on that same clock (the
+        # server time runs ~1 s ahead of it), and price -> fill is the delay the simulation's latency stands for
+        self._server_ms = snap.get("written_ms") or 0
+        if not self._pauses_loaded:                 # a losing streak's pause outlives a restart
+            self._pauses_loaded = True
+            self._blocked.update({k: v for k, v in self._saved_pauses(db).items() if v > now_s})
         base, max_pos, shorts = effective(s)
         st = self.strategy
         st.default, st.max_positions, st.shorts = base, max_pos, shorts
@@ -927,20 +1118,21 @@ class BotTrader:
         if self._pending:
             self._check_pending(db, s, held)
             return
+        # forget bot positions that no longer exist in the game (closed manually) - also while the bot is switched off,
+        # which is when the user takes over (else the bot tab keeps showing it); practice positions are not in the game
+        gone = [] if s.paper or not live else [
+            k for k, h in held.items() if not positions.get(k, {}).get("shares_owned" if h["side"] == "long" else "shares_shorted")]
+        self._missing = {k: self._missing.get(k, now_s) for k in gone}
+        for sid in [k for k in gone if now_s - self._missing[k] >= MISSING_GRACE_S]:      # not a stale / partial read
+            log.warning("bot: %s no longer in the game positions, forgotten (held: %s)", sid, held[sid])
+            held.pop(sid)
+            self._save_held(db, held)
         self.allowed = set(pick(self.calib, max_pos)) if self.calibrated else None
         self.loss_limit_hit = loss_limit_reached(load_results(db), s.loss_limit_pct) if s.enabled else False
         if s.enabled and live and self.allowed is None:
             self._say("", "learning", now_s)
         if not ((enabled or s.paper) and live and s.enabled and self.allowed is not None):
             return
-        # forget bot positions that no longer exist in the game (closed manually); practice positions are not in the game
-        gone = [] if s.paper else [k for k, h in held.items()
-                                   if not positions.get(k, {}).get("shares_owned" if h["side"] == "long" else "shares_shorted")]
-        self._missing = {k: self._missing.get(k, now_s) for k in gone}
-        for sid in [k for k in gone if now_s - self._missing[k] >= MISSING_GRACE_S]:      # not a stale / partial read
-            log.warning("bot: %s no longer in the game positions, forgotten (held: %s)", sid, held[sid])
-            held.pop(sid)
-            self._save_held(db, held)
         why: dict[str, tuple] = {}                  # stock -> (code, args): why the bot stays out of it
         for sid, until in self._blocked.items():
             if until > now_s:
@@ -959,18 +1151,20 @@ class BotTrader:
         for sid, x in stocks.items():
             if not x["unlocked"]:
                 why.setdefault(sid, ("locked", {}))
-        blocked = set(why)
-        self.last_check_ms, self.watching = int(time.time() * 1000), len([x for x in prices if x not in s.excluded])
         no_stock = {sid for sid, x in stocks.items() if not (x["available_shares"] or 0) > 0}
+        blocked = set(why) | no_stock                # ranked out up front: else the best signal, if unbuyable, wastes the side
+        self.last_check_ms, self.watching = int(time.time() * 1000), len([x for x in prices if x not in s.excluded])
         buy_free = (snap.get("next_buy_ms") or 0) <= server_ms
         short_free = (snap.get("next_short_ms") or 0) <= server_ms
         if s.paper:
             buy_free, short_free = now_s >= self._paper_next["buy"], now_s >= self._paper_next["short"]
 
-        event_soon = self.event_guard(db, server_ms)
+        # the game's buy / short cooldown is shared with the event trader and the user's rules; practice trades have
+        # their own (virtual) cooldowns, so they need not keep the real ones free
+        event_soon = {} if s.paper else self.event_guard(db, server_ms, snap)
         from .automation import ENTRY_ACTION          # automation imports this module; import late to avoid a cycle
-        armed = {ENTRY_ACTION[r["kind"]] for r in db.rules(True)
-                 if r["kind"] in ENTRY_ACTION}                      # the game's cooldown is shared with the user's rules
+        armed = set() if s.paper else {ENTRY_ACTION[r["kind"]] for r in db.rules(True)
+                                       if r["kind"] in ENTRY_ACTION and rule_near(r, prices.get(r["stock_id"]))}
         cd_left = {"buy": ((snap.get("next_buy_ms") or 0) - server_ms) / 1000, "short": ((snap.get("next_short_ms") or 0) - server_ms) / 1000}
         if s.paper:
             cd_left = {k: self._paper_next[k] - now_s for k in cd_left}
@@ -982,7 +1176,7 @@ class BotTrader:
             elif self.loss_limit_hit:
                 code, args = "loss_limit", {}
             elif event_soon:
-                code, args = "event_soon", self._event_args(event_soon)
+                code, args = "event_soon", self._event_args(next(iter(event_soon.values())))
             elif armed:
                 code, args = "rule_armed", {"kind": "/".join(sorted(armed))}
             else:
@@ -990,7 +1184,7 @@ class BotTrader:
             if code != "excluded":                   # you chose that one yourself: no need to say it
                 self._say(sid, code, now_s, **args)
         for sid, action, reason, z in st.orders(now_s, prices, held, buy_free, short_free, blocked):
-            if reason == "entry" and event_soon:             # keep the cooldowns free for the event trader
+            if reason == "entry" and action in event_soon:   # keep that cooldown free for the event trader
                 continue
             if reason == "entry" and sid in no_stock:          # a buy or a short needs shares still available
                 continue
@@ -1018,7 +1212,7 @@ class BotTrader:
         fair, p = st.fair[sid], st.p(sid)
         edge = (fair / price - 1) * 100 if buying else (price / fair - 1) * 100
         cash, free = paper_wallet(load_results(db), held) if s.paper else (snap.get("cash") or 0,) * 2
-        pct = stake_pct(s.trade_pct, z, p, cash, free, price, stock["available_shares"], buying)
+        pct = self._stake_pct(sid, s.trade_pct, z, p, cash, free, price, stock["available_shares"], buying)
         if pct < 1:
             return False
         waited = round(now_s - st._since.get(sid, (None, now_s))[1] + 1)
@@ -1045,18 +1239,11 @@ class BotTrader:
         return out
 
     @staticmethod
-    def event_guard(db: Storage, server_ms: int) -> Optional[dict]:
-        """The event the event trader will trade soon, if any: the game's buy / short cooldown is shared by all
-        stocks, so a bot entry now could leave the event trader waiting. ponytail: not simulated (events are too rare
-        in the history)."""
-        es = load_event_settings(db)
-        for ev in db.active_events(server_ms):
-            if ev["phase"] in EVENT_FINAL or not (es.pumps if ev["direction"] == "pump" else es.crashes):
-                continue
-            lead = PUMP_LEAD_S if ev["direction"] == "pump" else es.crash_minutes * 60
-            if ev["scheduled_ms"] - server_ms <= (lead + EVENT_COOLDOWN_S) * 1000:
-                return ev
-        return None
+    def event_guard(db: Storage, server_ms: int, snap: Optional[dict] = None) -> dict:
+        """action -> event: the buy / short cooldowns the event trader needs soon (events.reservations). They are
+        shared by all stocks, so a bot entry of that kind now could leave the event trader waiting.
+        ponytail: not simulated (events are too rare in the history)."""
+        return reservations(db, load_event_settings(db), server_ms, snap)[1]
 
     def _paper_trade(self, db: Storage, s: BotSettings, held: dict, sid: str, action: str, reason: str, price: float,
                      z: Optional[float], now_s: float, stock: dict, snap: dict) -> None:
@@ -1065,7 +1252,7 @@ class BotTrader:
         if reason == "entry":
             cash, free = paper_wallet(load_results(db), held)
             buying = action == "buy"
-            pct = stake_pct(s.trade_pct, z, self.strategy.p(sid), cash, free, price, stock["available_shares"], buying)
+            pct = self._stake_pct(sid, s.trade_pct, z, self.strategy.p(sid), cash, free, price, stock["available_shares"], buying)
             money = trade_money(price, pct, free, stock["available_shares"], buying)
             if pct < 1 or money <= 0:
                 return
@@ -1080,7 +1267,7 @@ class BotTrader:
 
     def _send(self, db: Storage, s: BotSettings, sid: str, action: str, reason: str, price: float,
               z: Optional[float], now_s: float, stock: dict, cash: float, close_pct: int = 100) -> bool:
-        pct = (stake_pct(s.trade_pct, z, self.strategy.p(sid), cash, cash, price, stock["available_shares"],
+        pct = (self._stake_pct(sid, s.trade_pct, z, self.strategy.p(sid), cash, cash, price, stock["available_shares"],
                          action == "buy") if reason == "entry" else close_pct)
         if reason == "entry" and pct < 1:
             return False                                   # over the risk budget
@@ -1093,7 +1280,7 @@ class BotTrader:
             self._log(db, sid, t("rule.log.send_failed", error=exc))
             return False
         self._pending = dict(sent=sent, known=known, pos_ms=pos_ms, t=time.time(), reason=reason, price=price, now_s=now_s,
-                             pct=sent.percent, target=self.strategy.fair.get(sid),
+                             pct=sent.percent, target=self.strategy.fair.get(sid), server_ms=self._server_ms,
                              money=trade_money(price, sent.percent, cash, stock["available_shares"], action == "buy"))
         return True
 
@@ -1112,6 +1299,9 @@ class BotTrader:
                 self._log(db, sid, t("event.log.rejected", status=status_text(res["status"]),
                                      reason=reason_text(res["reason"])))
                 return
+            done_ms = res["finished_ms"] or res["received_ms"]
+            if done_ms and pd.get("server_ms") and 0 < done_ms - pd["server_ms"] < LATENCY_MAX_S * 3000:
+                record_latency(db, (done_ms - pd["server_ms"]) / 1000)      # price written -> filled
             if sent.action in ("buy", "short"):
                 real = self._real_entry_price(db, sent, price)
                 record_fee(db, sid, "in", (real / price - 1) * 100 * (1 if sent.action == "buy" else -1))
@@ -1128,7 +1318,12 @@ class BotTrader:
                 real = self._real_exit_price(db, sid, h, price, pd["pos_ms"])
                 if real != price:
                     record_fee(db, sid, "out", (price / real - 1) * 100)
-                self._closed(db, held.pop(sid, None), sid, pd["reason"], real, now_s)
+                # a short's exit keeps the signal price (no real fill known): charge the cover's cost, else the
+                # learning (and the loss limit) see shorts better than they are
+                cover_fee = self.fees.get(sid, FEE_PCT) if h and h["side"] == "short" and real == price else 0.0
+                ret = self._closed(db, held.pop(sid, None), sid, pd["reason"], real, now_s, fee_pct=cover_fee)
+                if ret is not None:
+                    record_live(db, sid, ret, h["side"])    # what this stock really makes: the next calibration learns it
                 self._save_held(db, held)
         elif time.time() - pd["t"] > RESULT_TIMEOUT_S:
             self._pending = None
@@ -1179,9 +1374,10 @@ class BotTrader:
         return estimate
 
     def _closed(self, db: Storage, h: Optional[dict], sid: str, reason: str, price: float, now_s: float,
-                fee_pct: float = 0.0) -> None:
+                fee_pct: float = 0.0) -> Optional[float]:
+        """Journal a closed trade; returns its return (%), None without a held position."""
         if not h:
-            return
+            return None
         # ponytail: return uses the signal-time prices, not the exact fills
         ret = (price / h["entry_price"] - 1) * (1 if h["side"] == "long" else -1) * 100 - fee_pct
         res = load_results(db)
@@ -1196,4 +1392,7 @@ class BotTrader:
         if self._streak[sid] >= PAUSE_AFTER_LOSSES:
             self._streak[sid] = 0
             self._blocked[sid] = now_s + PAUSE_S
+            pauses = {k: v for k, v in self._saved_pauses(db).items() if v > now_s}
+            db.set_setting(_key(db, PAUSE_KEY), json.dumps({**pauses, sid: now_s + PAUSE_S}))   # survives a restart
             self._log(db, sid, t("bot.log.paused", sid=sid, min=PAUSE_S // 60))
+        return ret

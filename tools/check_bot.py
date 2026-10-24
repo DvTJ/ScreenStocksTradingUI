@@ -97,10 +97,10 @@ def check_volume_limit() -> None:
 
 
 def check_risk_limits() -> None:
-    p = bot.Params(stop_pct=10, max_loss_pct=3.0)                  # 3 % / (10 % x 1.5 slippage) = 20 % of the cash
-    assert bot.stake_pct(100, 20.0, p, 1000, 1000, 10, None, True) == 20, "stake capped by the loss budget"
+    p = bot.Params(stop_pct=10, max_loss_pct=3.0)        # 3 % / (10 % x 2, a confirmed stop's reach) = 15 % of the cash
+    assert bot.stake_pct(100, 20.0, p, 1000, 1000, 10, None, True) == 15, "stake capped by the loss budget"
     assert bot.stake_pct(10, 20.0, p, 1000, 1000, 10, None, True) == 10, "a smaller chosen stake is kept"
-    assert bot.stake_pct(100, 20.0, p, 1000, 1000, 10, 50, True) == 40, "the budget is money: 40 % of the 50 shares left"
+    assert bot.stake_pct(100, 20.0, p, 1000, 1000, 10, 50, True) == 30, "the budget is money: 30 % of the 50 shares left"
     assert bot.stake_pct(100, 20.0, p, 1000, 1000, 10, 5, True) == 100, "a tiny order is already within budget"
     assert bot.stake_pct(100, 20.0, bot.Params(stop_pct=10, max_loss_pct=0.01), 1000, 1000, 10, None, True) == 0
     lost = {"cash0": 1000, "trades": [{"ret": -10, "money": 600}, {"ret": 2, "money": 100}]}      # -60 + 2 = -58
@@ -233,6 +233,78 @@ def check_calibration() -> None:
     assert gain["n"] == 2 and gain["gain"] == 8.0 and gain["win_rate"] == 50 and gain["worst"]["sid"] == "B", gain
 
 
+def check_learning() -> None:
+    """Self-learning: real trades scale the stake, the measured delay feeds the replay, refinement must validate."""
+    c = bot.Calib(bot.Params(), score=100.0, n=10, win_rate=60, profit=120.0, avg_ret=4.0)
+    assert bot.live_trust(c, []) == 1.0, "no real trades yet: trust the replay"
+    assert bot.live_trust(c, [5.0] * 10) == 1.0, "better than replayed: full stake, never above the user's trade %"
+    half = bot.live_trust(c, [1.0] * 15)                   # blend 0.75 * 1 + 0.25 * 4 = 1.75 -> 1.75 / 4
+    assert abs(half - 1.75 / 4) < 1e-9, half
+    assert bot.live_trust(c, [-3.0] * 10) == 0.0, "real trades lose: the stock is dropped"
+    assert bot.live_trust(c, [-3.0]) > 0, "one bad trade does not overturn the replay"
+    learned = bot.apply_learning({"A": c, "B": c}, {"B": [-3.0] * 10})
+    assert learned["A"].good and learned["A"].trust == 1.0 and not learned["B"].good
+    assert bot.pick(learned, 3) == ["A"]
+    with tempfile.TemporaryDirectory() as d:
+        db = Storage(Path(d) / "l.db")
+        bot.record_latency(db, 2.3)
+        bot.record_latency(db, 3.1)
+        assert bot.measured_latency(db) is None, "too few orders: keep the default"
+        bot.record_latency(db, 2.8)
+        assert bot.measured_latency(db) == 3, "median 2.8 s -> 3 s on the 1 s grid"
+        for r in (1.0, -2.0):
+            bot.record_live(db, "A", r)
+        assert bot._learn_raw(db)["live"]["A"] == [[1.0, ""], [-2.0, ""]]
+        db.close()
+    trader = bot.BotTrader(writer=None)
+    trader.calib = {"A": bot.replace(c, trust=0.5)}
+    args = (100, -3.0, bot.Params(max_loss_pct=100), 1e6, 1e6, 10.0, None, True)
+    assert trader._stake_pct("A", *args) == bot.stake_pct(*args) // 2 and trader._stake_pct("B", *args) == bot.stake_pct(*args)
+    # per side: losing real shorts stop the shorts of that stock, its buys go on (and keep it ranked)
+    sided = bot.replace(c, side_avg={"long": 4.0, "short": 3.0})
+    learned = bot.apply_learning({"S": sided}, {"S": [[-5.0, "short"]] * 10 + [[6.0, "long"]] * 3})
+    assert learned["S"].side_trust == {"long": 1.0, "short": 0.0} and learned["S"].good, learned["S"]
+    trader.calib = learned
+    assert trader._stake_pct("S", *args[:-1], False) == 0, "no more shorts on it"
+    assert trader._stake_pct("S", *args) == bot.stake_pct(*args), "buys at full stake"
+    assert bot._live_trades([1.0, [2.0, "long"]]) == [(1.0, ""), (2.0, "long")], "older entries without a side"
+    # refinement: kept only when it also wins on the newest part; a run whose score never changes keeps `best`
+    calls = []
+    flat = lambda p, grid=None: calls.append(p) or bot.Calib(p, 1.0, 5, 50, 1.0)  # noqa: E731
+    best = flat(bot.Params())
+    assert bot.refine(flat, best, [10.0] * 4000) is best and len(calls) > 3
+    s = bot.BotSettings(level="medium", shorts=True)
+    calib = bot.calibrate({"MR": noisy(0.04, 4000, 1)}, s, latency_s=4)
+    assert calib["MR"].good and calib["MR"].avg_ret > 0 and calib["MR"].side_avg, calib["MR"]
+    # a stop waits out a one-tick spike (confirm_s) but not a loss beyond STOP_HARD x the stop
+    st = bot.Strategy(bot.Params(stop_pct=10, confirm_s=5, exit_z=0.1), 3, True)
+    for i in range(300):
+        st.update("A", i, 10 + (0.05 if i % 2 else -0.05))
+    held = {"A": {"side": "short", "entry_price": 10.0, "entry_s": 100}}
+    assert not st.orders(300, {"A": 11.5}, held, False, False), "15 % against: wait, it may be a blip"
+    assert not st.orders(302, {"A": 11.5}, held, False, False)
+    assert st.orders(304, {"A": 11.5}, held, False, False)[0][2] == "stop", "lasted confirm_s: stop"
+    held = {"A": {"side": "short", "entry_price": 10.0, "entry_s": 100}}
+    assert st.orders(300, {"A": 12.5}, held, False, False)[0][2] == "stop", "beyond 2 x the stop: at once"
+    # the losing-streak pause is stored, so a restart does not lift it
+    with tempfile.TemporaryDirectory() as d:
+        db = Storage(Path(d) / "p.db")
+        trader = bot.BotTrader(writer=None)
+        h = {"side": "short", "entry_price": 10.0, "entry_s": 0, "money": 100}
+        for _ in range(bot.PAUSE_AFTER_LOSSES):
+            trader._closed(db, dict(h), "T", "stop", 12.0, 1000.0)
+        fresh = bot.BotTrader(writer=None)
+        assert fresh._saved_pauses(db) == {"T": 1000.0 + bot.PAUSE_S}
+        # a position the user closed by hand while the bot is switched off is forgotten too (after the grace time)
+        fresh.calibrated = True
+        bot.BotTrader._save_held(db, {"W": {"side": "short", "entry_price": 10.0, "entry_s": 0, "money": 1}})
+        stocks = {"W": {"stock_id": "W", "last_price": 10.0, "unlocked": 1, "available_shares": 100}}
+        for now in (2000.0, 2000.0 + bot.MISSING_GRACE_S + 1):
+            fresh.step(db, bot.BotSettings(enabled=False), True, True, now, 0, stocks, {}, {})
+        assert bot.BotTrader.held(db) == {}, "stale bot position kept while switched off"
+        db.close()
+
+
 def check_backtest_and_state() -> None:
     with tempfile.TemporaryDirectory() as d:
         db = Storage(Path(d) / "a.db")
@@ -305,6 +377,7 @@ if __name__ == "__main__":
     check_trade_history()
     check_clear_history()
     check_calibration()
+    check_learning()
     check_backtest_and_state()
     check_config_roundtrip()
     check_translations()

@@ -40,9 +40,13 @@ def _points(rows, off: int) -> list[dict]:
     return out
 
 
+SPARK_MS, SPARK_BUCKET_MS = 30 * 60_000, 30_000      # watchlist sparkline: 30 min of 30 s closes
+
+
 class MarketApi:
     _trade: Optional[dict] = None       # command in flight: SentCommand, known result ids, send time
     _trade_result: Optional[dict] = None
+    _sparks: dict = {}                  # stock id -> (t_ref, open bucket start, [(start, close)] of closed buckets)
 
     # ------------------------------------------------------------------ helpers
 
@@ -54,6 +58,27 @@ class MarketApi:
         if settings_mod.assign_colors(self._settings, ids):
             settings_mod.save(self._settings)
         return {sid: self._settings.stock_colors[sid] for sid in ids}
+
+    def _spark(self, db, sid: str, t_ref: int, cache: dict) -> list[float]:
+        """Prices of db.bucket_closes(sid, t_ref - SPARK_MS, t_ref, SPARK_BUCKET_MS), closed buckets from the last call.
+
+        Only the partly covered oldest bucket and the buckets since the last call are read. The collector only
+        adds newer prices and compact() keeps the last row of every 10 s bucket, so a closed bucket never changes.
+        """
+        b = SPARK_BUCKET_MS
+        since = t_ref - SPARK_MS
+        edge = since - since % b + b                # first bucket that lies fully inside the window
+        open_ = t_ref - t_ref % b
+        old = self._sparks.get(sid)
+        if old and old[0] <= t_ref and old[1] >= edge:      # else first call, clock went back or jumped > window
+            hi, closed = old[1], [c for c in old[2] if c[0] >= edge]
+        else:
+            hi, closed = edge, []
+        new = db.bucket_closes(sid, hi, t_ref, b)
+        closed += [c for c in new if c[0] < open_]
+        cache[sid] = (t_ref, open_, closed)
+        head = db.bucket_closes(sid, since, edge - 1, b)
+        return [p for _, p in head + closed] + [p for s, p in new if s >= open_]
 
     # ---------------------------------------------------------------- watchlist
 
@@ -69,7 +94,7 @@ class MarketApi:
             known = {s["stock_id"] for s in stocks}
             stocks += [{"stock_id": sid} for sid in db.stock_ids() if sid not in known]
             colors = self._colors([s["stock_id"] for s in stocks])
-            rows = []
+            rows, sparks = [], {}
             for st in stocks:
                 sid = st["stock_id"]
                 last = db.latest_price(sid)
@@ -79,7 +104,7 @@ class MarketApi:
                 for key, secs in (("d1", 60), ("d5", 300), ("d15", 900), ("d60", 3600)):
                     old = db.price_at(sid, t_ref - secs * 1000) if t_ref else None
                     deltas[key] = (price / old - 1) * 100 if price and old else None
-                spark = [p for _, p in db.bucket_closes(sid, t_ref - 30 * 60_000, t_ref, 30_000)] if t_ref else []
+                spark = self._spark(db, sid, t_ref, sparks) if t_ref else []
                 pos = positions.get(sid, {})
                 owned, avg = pos.get("shares_owned", 0.0), pos.get("avg_buy_price", 0.0)
                 shorted, avg_s = pos.get("shares_shorted", 0.0), pos.get("avg_short_price", 0.0)
@@ -91,6 +116,7 @@ class MarketApi:
                                  avail=st.get("available_shares"), maxvol=st.get("max_volume"),
                                  unlocked=bool(st.get("unlocked", 1)), owned=owned, avg=avg, shorted=shorted,
                                  avg_short=avg_s, pl=pl, div=div))
+            self._sparks = sparks                   # drops stocks that are gone or have no prices
             log = [dict(id=r["id"], time=r["finished_ms"] or r["received_ms"], stock=r["stock_id"],
                         action=action_label(r["action"]), pct=r["percent"], status=r["status"],
                         status_text=status_text(r["status"]), reason=reason_text(r["reason"]))
@@ -100,55 +126,79 @@ class MarketApi:
 
     # -------------------------------------------------------------------- chart
 
+    def _chart_window(self, range_key: str) -> Optional[tuple[int, int, int]]:
+        """(since, end, offset) of the selected range, None without prices (caller holds the lock)."""
+        db = self._db
+        end = db.latest_time_ms()
+        if end is None:
+            return None
+        first = db.first_time_ms() or end
+        secs = RANGES.get(range_key)
+        since = first if secs is None else max(first, end - secs * 1000)
+        return since, end, _offset(end)
+
+    def _overlays(self, stock_id: str, since: int, end: int, off: int) -> dict:
+        """Trade markers, news, reference lines and announced events of a chart window (caller holds the lock)."""
+        db = self._db
+        markers = [dict(time=tr["time_ms"] // 1000 + off, kind=tr["kind"], price=tr["price"],
+                        letter=t(f"tradekind.{tr['kind']}.letter"),
+                        text=t("market.trade_marker", kind=t(f"tradekind.{tr['kind']}"),
+                               shares=f"{tr['shares']:,.0f}", price=f"{tr['price']:.4g}"))
+                   for tr in db.trades(stock_id, since, end) if tr["price"]]
+        news = [dict(time=ts // 1000 + off, kind=kind, price=p)
+                for ts, _s, p, kind, _lb in db.news(stock_id, since_ms=since, limit=2000)]
+        positions = db.current_positions()
+        pos = positions.get(stock_id)
+        lines = []
+        if pos and pos["shares_owned"]:
+            lines.append(dict(price=pos["avg_buy_price"], kind="avg_buy", title=t("common.avg_buy")))
+        if pos and pos["shares_shorted"]:
+            lines.append(dict(price=pos["avg_short_price"], kind="avg_short", title=t("common.avg_short")))
+        for rule in db.rules(enabled_only=True):
+            if rule["stock_id"] == stock_id:
+                trig = trigger_price(rule, pos)
+                if trig:
+                    lines.append(dict(price=trig, kind=rule["kind"], title=f"{kind_name(rule['kind'])} #{rule['id']}"))
+                elif rule["kind"] in TRAILING_ENTRY and rule["activation"]:   # not following yet: where it starts
+                    lines.append(dict(price=rule["activation"], kind=rule["kind"],
+                                      title=f"{kind_name(rule['kind'])} #{rule['id']} · " + t(
+                                          "trigger.activation", op=activation_op(rule), price=pyfmt.price(rule["activation"]))))
+        snap = db.latest_snapshot() or {}
+        now = snap.get("server_ms") or end
+        events = []
+        for s, direction, target, at, _pub in db.scheduled(50):
+            if s == stock_id and at >= now:
+                lines.append(dict(price=target, kind="event", title=t("market.scheduled_line", direction=direction)))
+                events.append(dict(direction=direction, target=target, at=at))
+        return {"markers": markers, "news": news, "lines": lines, "events": sorted(events, key=lambda e: e["at"])}
+
     def series(self, stock_id: str, range_key: str) -> dict:
         """Price series of the selected range plus markers, reference lines and announced events."""
         empty = {"data": [], "markers": [], "news": [], "lines": [], "events": [], "last_ms": 0, "offset": 0}
         if self._closing:
             return empty
         with self._lock:
-            db = self._db
-            end = db.latest_time_ms()
-            if end is None:
+            win = self._chart_window(range_key)
+            if win is None:
                 return empty
-            first = db.first_time_ms() or end
-            secs = RANGES.get(range_key)
-            since = first if secs is None else max(first, end - secs * 1000)
-            off = _offset(end)
-            pts = db.price_series(stock_id, since, end, max_points=MAX_POINTS)
-            bucket = max(1, (end - since) // MAX_POINTS)
-            markers = [dict(time=tr["time_ms"] // 1000 + off, kind=tr["kind"], price=tr["price"],
-                            letter=t(f"tradekind.{tr['kind']}.letter"),
-                            text=t("market.trade_marker", kind=t(f"tradekind.{tr['kind']}"),
-                                   shares=f"{tr['shares']:,.0f}", price=f"{tr['price']:.4g}"))
-                       for tr in db.trades(stock_id, since, end) if tr["price"]]
-            news = [dict(time=ts // 1000 + off, kind=kind, price=p)
-                    for ts, _s, p, kind, _lb in db.news(stock_id, since_ms=since, limit=2000)]
-            positions = db.current_positions()
-            pos = positions.get(stock_id)
-            lines = []
-            if pos and pos["shares_owned"]:
-                lines.append(dict(price=pos["avg_buy_price"], kind="avg_buy", title=t("common.avg_buy")))
-            if pos and pos["shares_shorted"]:
-                lines.append(dict(price=pos["avg_short_price"], kind="avg_short", title=t("common.avg_short")))
-            for rule in db.rules(enabled_only=True):
-                if rule["stock_id"] == stock_id:
-                    trig = trigger_price(rule, pos)
-                    if trig:
-                        lines.append(dict(price=trig, kind=rule["kind"], title=f"{kind_name(rule['kind'])} #{rule['id']}"))
-                    elif rule["kind"] in TRAILING_ENTRY and rule["activation"]:   # not following yet: where it starts
-                        lines.append(dict(price=rule["activation"], kind=rule["kind"],
-                                          title=f"{kind_name(rule['kind'])} #{rule['id']} · " + t(
-                                              "trigger.activation", op=activation_op(rule), price=pyfmt.price(rule["activation"]))))
-            snap = db.latest_snapshot() or {}
-            now = snap.get("server_ms") or end
-            events = []
-            for s, direction, target, at, _pub in db.scheduled(50):
-                if s == stock_id and at >= now:
-                    lines.append(dict(price=target, kind="event", title=t("market.scheduled_line", direction=direction)))
-                    events.append(dict(direction=direction, target=target, at=at))
-        return {"data": _points(pts, off), "markers": markers, "news": news, "lines": lines,
-                "events": sorted(events, key=lambda e: e["at"]), "last_ms": end, "offset": off,
-                "bucket_ms": int(bucket)}
+            since, end, off = win
+            pts = self._db.price_series(stock_id, since, end, max_points=MAX_POINTS)
+            overlays = self._overlays(stock_id, since, end, off)
+        bucket = max(1, (end - since) // MAX_POINTS)
+        return {"data": _points(pts, off), **overlays, "last_ms": end, "offset": off, "bucket_ms": int(bucket)}
+
+    def series_overlays(self, stock_id: str, range_key: str) -> dict:
+        """Only the overlays of series() - the chart refreshes them every 60 s, prices come from updates()."""
+        empty = {"markers": [], "news": [], "lines": [], "events": [], "offset": 0}
+        if self._closing:
+            return empty
+        with self._lock:
+            win = self._chart_window(range_key)
+            if win is None:
+                return empty
+            since, end, off = win
+            overlays = self._overlays(stock_id, since, end, off)
+        return {**overlays, "offset": off}
 
     def series_detail(self, stock_id: str, from_s: int, to_s: int, offset: int) -> dict:
         """Full-resolution points for a zoomed window (chart times are local-shifted seconds)."""

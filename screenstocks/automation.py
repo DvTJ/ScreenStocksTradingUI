@@ -18,7 +18,8 @@ from . import config
 from .bot import BotTrader, load_settings as load_bot_settings
 from .collector import Collector
 from .commands import CommandWriter, action_name, reason_text, status_text, ACTIONS
-from .events import EventTrader, load_settings as load_event_settings
+from .events import EventTrader, load_settings as load_event_settings, reservations
+from .gui import fmt
 from .i18n import keys as text_keys, t, variants
 from .storage import Storage
 
@@ -40,6 +41,9 @@ RETRY_REASONS = {"cooldown", "rate-limited", "queue-full", "not-ready", "held"}
 
 RESULT_TIMEOUT_S = 8.0
 RETRY_BACKOFF_S = 3.0
+# Trailing entries with an activation price fire only within this many times their turn % of it. Replay of the
+# recorded 3.6 h with five trailing rule sets: 1x = 94 % wins / -7.4 % max drawdown vs 64 % / -10.4 % without a zone.
+ZONE_K = 1.0
 
 
 def kind_name(kind: str) -> str:
@@ -121,6 +125,16 @@ def activation_op(rule: dict) -> str:
 def activation_reached(rule: dict, price: float) -> bool:
     act = rule.get("activation")
     return not act or (price <= act if rule["kind"] == "trailing_buy" else price >= act)
+
+
+def left_zone(rule: dict, price: float) -> bool:
+    """A trailing entry with an activation price fires only while the price is within ZONE_K x its turn % of that
+    activation price; beyond it the dip (or spike) is over. Without an activation price there is no zone."""
+    act = rule.get("activation")
+    if not act:
+        return False
+    reach = ZONE_K * (rule["value"] or 0) / 100
+    return price > act * (1 + reach) if rule["kind"] == "trailing_buy" else price < act * (1 - reach)
 
 
 def describe_trigger(rule: dict, trig: Optional[float], fmt_price, decimal_sep: str = ".") -> str:
@@ -256,13 +270,19 @@ class AutomationEngine(threading.Thread):
     @staticmethod
     def _follow(db: Storage, rule: dict, price: float) -> bool:
         """Trailing entry: keep the lowest (buy) / highest (short) price since following started.
-        Following starts once the activation price is reached (at once without one). False while waiting for it."""
+        Following starts once the activation price is reached (at once without one). False while waiting for it.
+        A price that has left the activation zone ends the following: the rule buys the turn of a dip, it never chases
+        the price far past it (live: a trailing buy activated below 7.56 bought a spike at 34)."""
         ext = rule["extreme"]
         if ext is None:
             if not activation_reached(rule, price):
                 return False
             rule["extreme"] = price
             db.update_rule(rule["id"], extreme=price)
+        elif left_zone(rule, price):
+            rule["extreme"] = None
+            db.update_rule(rule["id"], extreme=None)
+            return False
         elif price < ext if rule["kind"] == "trailing_buy" else price > ext:
             rule["extreme"] = price
             db.update_rule(rule["id"], extreme=price)
@@ -303,7 +323,8 @@ class AutomationEngine(threading.Thread):
         server_now = (snap.get("server_ms") or 0) + int((time.time() - (st.last_market_read or time.time())) * 1000)
         now = time.time()
 
-        self.events.step(db, load_event_settings(db), live, enabled, server_now, prices, positions, snap)
+        ev_settings = load_event_settings(db)
+        self.events.step(db, ev_settings, live, enabled, server_now, prices, positions, snap)
         try:
             self.bot.step(db, load_bot_settings(db), live, enabled, now, server_now,
                           {s["stock_id"]: s for s in db.stocks()}, positions, snap)
@@ -311,10 +332,24 @@ class AutomationEngine(threading.Thread):
             log.exception("bot error")                    # must not stop the rules below (stop-losses)
         if not rules:
             return
+        # announced pumps / crashes take precedence: hands off their stock, no buy / short that would use the
+        # cooldown the event trader needs (exits on other stocks stay active: sells and covers have no cooldown)
+        owned, reserved = reservations(db, ev_settings, server_now, snap)
 
         for rule in rules:
             rid, sid = rule["id"], rule["stock_id"]
             price, pos = prices.get(sid), positions.get(sid)
+
+            ev = owned.get(sid) or (reserved.get(ENTRY_ACTION[rule["kind"]]) if rule["kind"] in ENTRY_ACTION else None)
+            if ev and rid not in self._pending:
+                self._since.pop(rid, None)
+                if rule["kind"] in TRAILING_ENTRY and rule["extreme"] is not None:
+                    rule["extreme"] = None          # the event moves the price: follow it afresh afterwards
+                    db.update_rule(rid, extreme=None)
+                self._set_status(db, rule, status_msg("rule.st.event_paused" if sid in owned else "rule.st.event_reserved",
+                                                      kind=t(f"event.{ev['direction']}"),
+                                                      time=fmt.clock(ev["scheduled_ms"])))
+                continue
 
             # trailing stop follows the best price while the position is open
             if rule["kind"] == "trailing_stop":

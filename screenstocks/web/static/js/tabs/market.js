@@ -4,6 +4,7 @@
 (() => {
   const { t, fmt, esc, cls } = SS;
   const RANGES = ["1m", "5m", "15m", "1h", "6h", "24h", "all"];
+  const RANGE_S = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "6h": 21600, "24h": 86400 };   // as RANGES in market.py
   const TRADE_COLORS = { buy: "#3fb950", sell: "#f85149", short: "#a371f7", cover: "#58a6ff" };
   const LINE_COLORS = {
     avg_buy: "#58a6ff", avg_short: "#d2a8ff", event: "#d29922", stop_loss: "#f85149", take_profit: "#3fb950",
@@ -245,7 +246,30 @@
     S.series.applyOptions({ lineColor: color, topColor: color + "55", bottomColor: color + "04", priceLineColor: color });
     S.series.setData(res.data);
     q('[data-role="empty"]').classList.toggle("hidden", res.data.length > 0);
+    applyOverlays(res);
+    if (view) S.chart.timeScale().setVisibleRange(view);
+    else { S.chart.priceScale("right").applyOptions({ autoScale: true }); S.chart.timeScale().fitContent(); setZoomed(false); }
+  }
 
+  /** The 60 s refresh: new trades, rules, positions and events; price data, zoom and scroll stay as they are. */
+  async function loadOverlays() {
+    if (!S.selected || S.loading) return;
+    const sid = S.selected, range = S.range;
+    S.lastReload = Date.now();
+    const res = await SS.call("series_overlays", sid, range);
+    if (sid !== S.selected || range !== S.range || S.loading) return;
+    if (res.offset !== S.offset) return loadSeries(true);     // UTC offset changed (DST): chart times shift
+    // live points keep being appended: keep the stats (and marker snapping) to the selected range, as a full reload did
+    const secs = RANGE_S[range], last = S.times[S.times.length - 1];
+    if (secs && last !== undefined && S.times[0] < last - secs) {
+      const i = S.times.findIndex((tm) => tm >= last - secs);
+      S.times = S.times.slice(i); S.data = S.data.slice(i);
+    }
+    applyOverlays(res);
+  }
+
+  /** Markers, price lines and events of a series()/series_overlays() result on the current chart data. */
+  function applyOverlays(res) {
     const marks = [];
     for (const n of res.news) {
       marks.push({ time: nearestTime(n.time), position: n.kind === "high" ? "aboveBar" : "belowBar",
@@ -264,8 +288,6 @@
       color: LINE_COLORS[l.kind] || "#f0883e", title: l.title,
     }));
     S.events = res.events;
-    if (view) S.chart.timeScale().setVisibleRange(view);
-    else { S.chart.priceScale("right").applyOptions({ autoScale: true }); S.chart.timeScale().fitContent(); setZoomed(false); }
     renderStats(res.markers.length);
     renderHead();
   }
@@ -461,8 +483,8 @@
       else if (st.state === "rejected" || st.state === "timeout") SS.toast(st.text, "err", 5000);
       S.lastTradeState = st.state;
     }
-    if (Date.now() - S.lastReload > 60_000) loadSeries(true);   // new trades, rules, events
-    else await pollSeries();
+    if (Date.now() - S.lastReload > 60_000) loadOverlays();   // new trades, rules, events
+    await pollSeries();
   }
 
   /** Keyboard: arrow up/down = previous/next stock in the shown order, R = reset the chart zoom. */

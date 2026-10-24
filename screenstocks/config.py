@@ -12,7 +12,7 @@ MARKET_FILE = "market.json"
 HISTORY_FILE = "history.json"
 
 # How often the collector checks the export files for changes (seconds).
-POLL_INTERVAL_S = 0.25
+POLL_INTERVAL_S = 0.1
 # How often the GUI refreshes (milliseconds).
 GUI_REFRESH_MS = 1000
 # Data older than this is treated as "not live" (milliseconds).

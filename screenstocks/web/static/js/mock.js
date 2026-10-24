@@ -18,6 +18,22 @@
     "web.ui_classic": "Classic interface", "web.ui_classic_desc": "Tkinter", "web.settings_more": "More settings in phase 5.",
     "web.restart_now": "Restart",
   };
+  // market tab: one stock with a smooth fake price per second, a trade marker, a price line and an event
+  const off = -new Date().getTimezoneOffset() * 60;
+  const price = (s) => 100 + 5 * Math.sin(s / 300) + Math.sin(s / 17);
+  const points = (fromS, toS) => {
+    const out = [];
+    for (let s = Math.floor(fromS) + 1; s <= toS; s++) out.push({ time: s + off, value: price(s) });
+    return out;
+  };
+  const nowS = () => Math.floor(Date.now() / 1000);
+  const overlays = () => ({
+    markers: [{ time: nowS() - 600 + off, kind: "buy", price: price(nowS() - 600), letter: "B", text: "Buy" }],
+    news: [{ time: nowS() - 900 + off, kind: "high", price: price(nowS() - 900) }],
+    lines: [{ price: 99, kind: "avg_buy", title: "Avg buy" }, { price: 108, kind: "event", title: "Event" }],
+    events: [{ direction: "up", target: 108, at: start + 30 * 60_000 }],
+    offset: off,
+  });
   window.pywebview = {
     api: {
       init: async () => ({ lang: "en", texts, version: "2.0.0-dev", colors: {}, frozen: false, ui: "web" }),
@@ -30,6 +46,16 @@
       }),
       set_ui: async () => {}, restart: async () => {}, open_url: async () => {}, install_update: async () => {},
       log_client_error: async () => {},
+      market: async () => ({
+        rows: [{ id: "AAA", name: "Alpha", color: "#58a6ff", price: price(nowS()), d1: 0.1, d5: 0.4, d15: -0.2, d60: 1.2,
+                 spark: [99, 100, 101, 100.5], base: 100, cap: 200, rate: 0.001, avail: 1e6, maxvol: 5e4, unlocked: true,
+                 owned: 1000, avg: 99, shorted: 0, avg_short: 0, pl: 1000 * (price(nowS()) - 99), div: 120 }],
+        factor: 1, factor_n: 0, live: true, trade: null, log: [],
+      }),
+      series: async () => ({ data: points(nowS() - 3600, nowS()), ...overlays(), last_ms: nowS() * 1000, bucket_ms: 1 }),
+      series_overlays: async () => overlays(),
+      updates: async (_sid, sinceMs) => ({ data: points(sinceMs / 1000, nowS()), last_ms: Math.max(sinceMs, nowS() * 1000) }),
+      series_detail: async () => ({ data: [], bucket_ms: 1 }),
     },
   };
 })();

@@ -20,9 +20,11 @@ from ..events import EventSettings, load_settings as load_event_settings, save_s
 from ..gui import fmt as pyfmt
 from ..i18n import t
 
-PUMP_PARAMS = ("pump_buy_pct", "pump_drop_pct", "pump_start_share", "pump_safety_s", "pump_short_pct",
-               "pump_cover_pct", "pump_cover_max_s")
-CRASH_PARAMS = ("crash_minutes", "crash_short_pct", "crash_rise_pct", "crash_safety_s", "crash_rebuy_pct")
+PUMP_PARAMS = ("pump_buy_pct", "pump_drop_pct", "pump_start_share", "pump_target_share", "pump_safety_s",
+               "pump_short_pct", "pump_cover_pct", "pump_cover_max_s")
+CRASH_PARAMS = ("crash_minutes", "crash_short_pct", "crash_target_pct", "crash_rise_pct", "crash_safety_s",
+                "crash_rebuy_pct")
+SWITCHES = ("pumps", "crashes", "fund_events")
 
 
 def _num(value) -> float:
@@ -233,10 +235,9 @@ class AutomationApi:
         """Store switches and parameters; invalid numbers keep their previous value (like the classic tab)."""
         with self._lock:
             old = load_event_settings(self._db)
-            new_values = {"pumps": bool(values.get("pumps", old.pumps)),
-                          "crashes": bool(values.get("crashes", old.crashes))}
+            new_values = {k: bool(values.get(k, getattr(old, k))) for k in SWITCHES}
             for f in fields(EventSettings):
-                if f.name in ("pumps", "crashes"):
+                if f.name in SWITCHES:
                     continue
                 current = getattr(old, f.name)
                 try:
@@ -249,7 +250,7 @@ class AutomationApi:
             new = EventSettings(**new_values)
             if new != old:
                 save_event_settings(self._db, new)
-                for k in ("pumps", "crashes"):
+                for k in SWITCHES:
                     if getattr(new, k) != getattr(old, k):
                         self._db.log_rule(self._now_ms(), None, "",
                                           f"{t('event.switch_' + k)}: "

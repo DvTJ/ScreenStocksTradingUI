@@ -917,9 +917,10 @@ class AutomationTab(ttk.Frame):
         ("target", "event.col_target", 85, "e"),
         ("phase", "event.col_phase", 260, "w"),
     ]
-    PUMP_PARAMS = ("pump_buy_pct", "pump_drop_pct", "pump_start_share", "pump_safety_s", "pump_short_pct",
-                   "pump_cover_pct", "pump_cover_max_s")
-    CRASH_PARAMS = ("crash_minutes", "crash_short_pct", "crash_rise_pct", "crash_safety_s", "crash_rebuy_pct")
+    PUMP_PARAMS = ("pump_buy_pct", "pump_drop_pct", "pump_start_share", "pump_target_share", "pump_safety_s",
+                   "pump_short_pct", "pump_cover_pct", "pump_cover_max_s")
+    CRASH_PARAMS = ("crash_minutes", "crash_short_pct", "crash_target_pct", "crash_rise_pct", "crash_safety_s",
+                    "crash_rebuy_pct")
     RULE_COLUMNS = [
         ("id", "#", 40, "e"),
         ("stock", "common.stock", 75, "w"),
@@ -1316,7 +1317,8 @@ class AutomationTab(ttk.Frame):
     def _save_events(self) -> None:
         """Store the switches and parameters; invalid numbers keep their previous value."""
         old = load_event_settings(self.app.db)
-        values = {"pumps": bool(self.ev_vars["pumps"].get()), "crashes": bool(self.ev_vars["crashes"].get())}
+        values = {"pumps": bool(self.ev_vars["pumps"].get()), "crashes": bool(self.ev_vars["crashes"].get()),
+                  "fund_events": old.fund_events}          # switched in the web interface only
         for key in self.PUMP_PARAMS + self.CRASH_PARAMS:
             current = getattr(old, key)
             try:
