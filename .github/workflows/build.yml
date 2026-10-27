@@ -266,12 +266,14 @@ jobs:
           merge-multiple: true
 
       - name: Unpack
-        run: tar -xzf ScreenStocksTradingBot-*-linux-x86_64.tar.gz
+        run: |
+          tar -xzf ScreenStocksTradingBot-*-linux-x86_64.tar.gz
+          "$APP" --probe-web || true      # what a bare system lacks (the reason the app would show)
 
       - name: Install the libraries the README lists, plus Xvfb
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xauth libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libxcomposite1 \
+          sudo apt-get install -y xvfb xauth libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libxcomposite1 \
             libxdamage1 libxrandr2 libxtst6 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
           sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2   # renamed in 24.04
@@ -279,6 +281,7 @@ jobs:
       - name: Web UI smoke test
         timeout-minutes: 5
         run: |
+          "$APP" --probe-web || true      # shows why Qt cannot start, if it cannot (needs no display for imports)
           xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/smoke.db" 2>&1 | tee smoke.log
           grep -q "smoke test: [1-9]" smoke.log
 

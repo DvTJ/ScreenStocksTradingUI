@@ -154,9 +154,14 @@ def main() -> int:
 
 
 def _probe_web() -> int:
-    """Child process of webview_available (Linux, Qt backend): Qt either starts here or aborts this process."""
-    from qtpy import QtWebEngineWidgets  # noqa: F401 - must be imported before the QApplication exists
-    from qtpy.QtWidgets import QApplication
+    """Child process of webview_available (Linux, Qt backend): Qt either starts here or aborts this process.
+    The last stderr line is the reason shown to the user."""
+    try:
+        from qtpy import QtWebEngineWidgets  # noqa: F401 - must be imported before the QApplication exists
+        from qtpy.QtWidgets import QApplication
+    except Exception as exc:  # e.g. a missing system library: "libGL.so.1: cannot open shared object file"
+        print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
     QApplication(sys.argv[:1])
     return 0
 
