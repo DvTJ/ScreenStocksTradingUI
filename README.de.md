@@ -89,7 +89,13 @@ tar -xzf ScreenStocksTradingBot-x.y.z-linux-x86_64.tar.gz
 
 Der Build entsteht auf Ubuntu 22.04 (benötigt glibc 2.35 oder neuer) und enthält Qt, nutzt aber die üblichen
 X11-/Qt-Systembibliotheken. Startet die App nicht, diese installieren, unter Debian/Ubuntu zum Beispiel
-`sudo apt install libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3`.
+`sudo apt install libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3`. Kann Qt nicht starten, öffnet sich
+stattdessen die klassische Oberfläche und nennt die Bibliotheken.
+
+Ubuntu 23.10 und neuer (AppArmor) sperren die Sandbox, die Qt WebEngine nutzt; dort läuft die Webansicht der App
+ohne sie (sie zeigt nur die eigenen Seiten der App). Wer die Sandbox behalten will, führt einmal
+`sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh` aus – nach dem Verschieben des Ordners erneut;
+`sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh --remove` entfernt es wieder.
 
 Unter macOS und Linux gibt es keinen Installer: für ein Update die neue Datei unter [Releases](../../releases)
 herunterladen und die alte App ersetzen. Einstellungen und Historie bleiben, wo sie sind.
@@ -125,7 +131,9 @@ Unter macOS und Linux gibt es keinen Startmenü-Eintrag; dort `--setup` verwende
 **macOS**
 
 - Einstellungen, Datenbank und Log: `~/Library/Application Support/ScreenStocksTradingBot/`
-- Spiel-Ordner: `~/Library/Application Support/Conradical Games/Screen Stocks/` (gleicher Inhalt wie unter Windows)
+- Spiel-Ordner: `~/Library/Application Support/Conradical Games/Screen Stocks/` (gleicher Inhalt wie unter Windows).
+  Wer die Windows-Version in einer CrossOver- oder Whisky-Bottle spielt: die App sucht auch in
+  `drive_c/users/<Benutzer>/AppData/LocalLow/Conradical Games/Screen Stocks/` jeder Bottle.
 
 **Linux**
 
@@ -136,9 +144,10 @@ Unter macOS und Linux gibt es keinen Startmenü-Eintrag; dort `--setup` verwende
   (die Demo nutzt `5124200` statt `4356780`; gleicher Inhalt wie unter Windows). Die App sucht im Standard-Steam-Ordner
   (`~/.local/share/Steam`, Flatpak `~/.var/app/com.valvesoftware.Steam/.local/share/Steam`,
   Snap `~/snap/steam/common/.local/share/Steam`) und in jeder Bibliothek aus Steams `libraryfolders.vdf`.
+  Auch einfache Wine- (`~/.wine`), Bottles- und Lutris-Präfixe (`~/Games/<Präfix>`) werden durchsucht.
 
-Wer die App unter macOS oder Linux schon aus dem Quellcode gestartet hat und den Ordner `~/ScreenStocksTradingBot`
-besitzt, behält ihn für Einstellungen, Datenbank und Log. Wird der Spiel-Ordner nicht gefunden, den `export`-Ordner
+Wer die App unter macOS oder Linux schon aus dem Quellcode gestartet hat und in `~/ScreenStocksTradingBot` deren
+`settings.json` oder `screenstocks.db` hat, behält diesen Ordner für Einstellungen, Datenbank und Log. Wird der Spiel-Ordner nicht gefunden, den `export`-Ordner
 im Einrichtungsassistenten von Hand wählen.
 
 > **Hinweis:** Handelsbefehle und Automatik-Regeln wirken über die Befehlsdateien des Mods im Spiel.
@@ -184,7 +193,10 @@ es nur für Windows.
 
 `.github/workflows/build.yml` baut App, Installer und portable ZIP auf `windows-latest`.
 Außerdem baut er die macOS-`.dmg`-Dateien (arm64 auf `macos-15`, x86_64 auf `macos-15-intel`) und das Linux-`.tar.gz`
-(auf `ubuntu-22.04`) und führt die Tests unter Windows, macOS und Linux aus.
+(auf `ubuntu-22.04`) und führt die Tests unter Windows, macOS und Linux aus. Die gebaute macOS-App und der
+Linux-Download (auf Ubuntu 22.04 und 24.04, unter Xvfb) werden einmal mit ihrer Weboberfläche gestartet
+(`--smoke-test`); unter Linux auch mit AppArmors Sperre, mit dem Profil-Skript und mit einem Qt, das nicht starten
+kann (klassische Oberfläche).
 
 - Tag `vX.Y.Z` pushen → ein GitHub-Release mit Installer und ZIP wird automatisch erstellt
   (die Version kommt aus dem Tag). Das Release enthält auch die macOS- und Linux-Dateien.

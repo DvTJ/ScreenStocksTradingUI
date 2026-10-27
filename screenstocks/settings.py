@@ -206,8 +206,11 @@ def open_url(url: str) -> None:
     webbrowser.open(url)
 
 
+def self_command(*args: str) -> list:
+    """Command line that starts this app again (the frozen executable, or python main.py)."""
+    return [sys.executable, *args] if is_frozen() else [sys.executable, sys.argv[0], *args]
+
+
 def restart_app() -> None:
     """Start a fresh instance of the app (the caller closes the current one)."""
-    args = [a for a in sys.argv[1:] if a != "--setup"]
-    cmd = [sys.executable, *args] if is_frozen() else [sys.executable, sys.argv[0], *args]
-    subprocess.Popen(cmd, close_fds=True)
+    subprocess.Popen(self_command(*[a for a in sys.argv[1:] if a != "--setup"]), close_fds=True)

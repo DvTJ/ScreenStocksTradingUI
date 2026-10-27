@@ -5,13 +5,19 @@ chosen in the settings and starts automatically when the web view is missing.
 """
 
 import importlib.util
+import logging
 import os
 import subprocess
 import sys
 import tempfile
 import urllib.request
 from pathlib import Path
+from typing import Optional
 
+log = logging.getLogger(__name__)
+
+# AppArmor profile written by installer/linux/install-apparmor-profile.sh (shipped next to the Linux executable)
+APPARMOR_PROFILE = "screenstocks-trading-bot"
 WEBVIEW2_CLIENT = r"Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 WEBVIEW2_DOWNLOAD = "https://developer.microsoft.com/microsoft-edge/webview2/"
 # Microsoft's official Evergreen bootstrapper (tiny; downloads and installs the runtime)
@@ -69,20 +75,52 @@ def unblock_bundled_dlls() -> None:
                     pass                         # not marked, or no write access
 
 
-def qt_sandbox_fix(flag: Path = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")) -> None:
+def apparmor_label(paths=(Path("/proc/self/attr/apparmor/current"), Path("/proc/self/attr/current"))) -> str:
+    """Name of the AppArmor profile this process runs under ("unconfined" or "" without one)."""
+    for path in paths:
+        try:
+            return path.read_text().strip("\0\n ").split(" ")[0]
+        except OSError:
+            continue
+    return ""
+
+
+def qt_sandbox_fix(flag: Path = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns"),
+                   label: Optional[str] = None) -> None:
     """Ubuntu 23.10+ blocks the user namespaces Qt WebEngine's sandbox needs (AppArmor); its renderer then dies and
-    the window stays blank. Only then run it without the sandbox - the page is the app's own local files."""
+    the window stays blank. Unless install-apparmor-profile.sh allowed them for this app, run it without the
+    sandbox - the page is the app's own local files."""
     try:
         restricted = flag.read_text().strip() == "1"
     except OSError:
         return
-    if restricted:
-        os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+    if not restricted:
+        return
+    if (apparmor_label() if label is None else label) == APPARMOR_PROFILE:
+        log.info("Qt WebEngine sandbox on (AppArmor profile %s)", APPARMOR_PROFILE)
+        return
+    os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+    log.warning("AppArmor blocks user namespaces: Qt WebEngine sandbox off "
+                "(sudo ./install-apparmor-profile.sh in the app folder keeps it on)")
+
+
+def qt_probe() -> str:
+    """"" if Qt starts in a child process, else why not. A missing system library (e.g. libxcb-cursor0) makes Qt
+    abort the whole process, so the web UI could not fall back to the classic one by itself."""
+    from ..settings import self_command
+    try:
+        result = subprocess.run(self_command("--probe-web"), capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"Qt check failed: {exc}"
+    if result.returncode == 0:
+        return ""
+    lines = [line for line in result.stderr.splitlines() if line.strip()]
+    return f"Qt cannot start (exit code {result.returncode})" + (f": {lines[-1]}" if lines else "")
 
 
 def webview_available() -> tuple[bool, str]:
     """(usable, reason) - the web UI needs pywebview and, on Windows, the WebView2 runtime,
-    on Linux a GTK (gi) or Qt (qtpy) backend. Cheap checks only, no window is started."""
+    on Linux a GTK (gi) or Qt (qtpy) backend; a Qt-only setup is test-started in a child process."""
     if sys.platform == "win32":  # the Zone.Identifier mark is an NTFS stream
         unblock_bundled_dlls()
     try:
@@ -92,6 +130,11 @@ def webview_available() -> tuple[bool, str]:
     if sys.platform == "win32":
         if not webview2_version():
             return False, "WebView2 runtime not installed"
-    elif sys.platform != "darwin" and not any(importlib.util.find_spec(m) for m in ("gi", "qtpy")):
-        return False, "no pywebview backend (GTK WebKit or Qt) installed"
+    elif sys.platform != "darwin":
+        if not any(importlib.util.find_spec(m) for m in ("gi", "qtpy")):
+            return False, "no pywebview backend (GTK WebKit or Qt) installed"
+        if importlib.util.find_spec("gi") is None:
+            reason = qt_probe()
+            if reason:
+                return False, reason
     return True, ""

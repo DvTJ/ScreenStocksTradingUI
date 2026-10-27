@@ -37,14 +37,69 @@ def _backends(monkeypatch, *present):
                         else real(name, *a))
 
 
-@pytest.mark.parametrize("flag, expected", [("1\n", "1"), ("0\n", None), (None, None)])
-def test_qt_sandbox_only_off_when_blocked(web, monkeypatch, tmp_path, flag, expected):
+@pytest.mark.parametrize("flag, label, expected", [
+    ("1\n", "unconfined", "1"),                      # blocked, no profile: sandbox off
+    ("1\n", "", "1"),
+    ("1\n", "screenstocks-trading-bot", None),       # install-apparmor-profile.sh allowed it: sandbox stays on
+    ("0\n", "unconfined", None),
+    (None, "unconfined", None),                      # no such restriction on this kernel
+])
+def test_qt_sandbox_only_off_when_blocked(web, monkeypatch, tmp_path, flag, label, expected):
     monkeypatch.delenv("QTWEBENGINE_DISABLE_SANDBOX", raising=False)
     path = tmp_path / "apparmor_restrict_unprivileged_userns"
     if flag is not None:
         path.write_text(flag)
-    web.qt_sandbox_fix(path)
+    web.qt_sandbox_fix(path, label)
     assert os.environ.get("QTWEBENGINE_DISABLE_SANDBOX") == expected
+
+
+def test_apparmor_label(web, tmp_path):
+    current = tmp_path / "current"
+    current.write_text("screenstocks-trading-bot (unconfined)\n")
+    assert web.apparmor_label((tmp_path / "missing", current)) == "screenstocks-trading-bot"
+    assert web.apparmor_label((tmp_path / "missing",)) == ""
+
+
+@pytest.mark.parametrize("code, stderr, reason", [
+    (0, "", ""),
+    (-6, "qt.qpa.plugin: could not load xcb\nThis application failed to start\n",
+     "Qt cannot start (exit code -6): This application failed to start"),
+])
+def test_qt_probe(web, monkeypatch, code, stderr, reason):
+    seen = []
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, code, "", stderr)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert web.qt_probe() == reason
+    assert seen[0][-1] == "--probe-web"
+
+
+def test_qt_only_linux_setup_is_probed(web, monkeypatch):
+    _backends(monkeypatch, "qtpy")
+    monkeypatch.setattr(web, "qt_probe", lambda: "Qt cannot start (exit code -6)")
+    assert web.webview_available() == (False, "Qt cannot start (exit code -6)")
+    _backends(monkeypatch, "gi", "qtpy")                    # GTK is used then: no probe
+    assert web.webview_available() == (True, "")
+
+
+def test_self_command(monkeypatch):
+    from screenstocks import settings
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert settings.self_command("--x") == [sys.executable, "--x"]
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr(sys, "argv", ["main.py", "--setup"])
+    assert settings.self_command("--x") == [sys.executable, "main.py", "--x"]
+
+
+def test_tk_fonts_unchanged_on_windows(monkeypatch):
+    from screenstocks.gui import theme
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert theme.font(12, "bold") == ("Segoe UI", 12, "bold")
+    assert theme.THEME["font_kpi"] == ("Segoe UI", 15, "bold")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert theme.font(12, "bold") == ("Segoe UI", 16, "bold")   # macOS Tk points are 72 dpi
 
 
 def test_lock_unreachable_db_folder_does_not_crash(tmp_path):
@@ -65,6 +120,7 @@ def test_webview_linux_needs_backend(web, monkeypatch):
     ok, reason = web.webview_available()
     assert not ok and "backend" in reason
     _backends(monkeypatch, "qtpy")
+    monkeypatch.setattr(web, "qt_probe", lambda: "")          # Qt starts (checked in a child process)
     assert web.webview_available() == (True, "")
 
 

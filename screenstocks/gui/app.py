@@ -26,7 +26,7 @@ from . import fmt
 from .chart import HLine, LineChart, Marker, Series, blend
 from .analysis import DividendTab, JournalTab, StatsTab
 from .bot_tab import BotTab
-from .theme import THEME, apply_style, set_window_icon
+from .theme import THEME, apply_style, font, set_window_icon
 from .widgets import RangeBar, SortableTree, scrolled
 
 
@@ -957,7 +957,7 @@ class AutomationTab(ttk.Frame):
         tk.Checkbutton(top, text=t("auto.master"), variable=self.enabled_var, command=self._toggle_master,
                        bg=THEME["panel"], fg=THEME["fg"], selectcolor=THEME["panel_alt"],
                        activebackground=THEME["panel"], activeforeground=THEME["fg"],
-                       font=("Segoe UI", 11, "bold"), highlightthickness=0, bd=0).pack(side="left", padx=4)
+                       font=font(11, "bold"), highlightthickness=0, bd=0).pack(side="left", padx=4)
         self.engine_state = ttk.Label(top, text="", style="Section.TLabel")
         self.engine_state.pack(side="left", padx=12)
 

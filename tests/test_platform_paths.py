@@ -117,6 +117,36 @@ def test_unpacked_app_folder_is_not_legacy(home, monkeypatch):
     assert settings.user_data_dir() == home / ".local" / "share" / APP
 
 
+def bottle(prefix, user="crossover"):
+    root = prefix / "drive_c" / "users" / user / "AppData" / "LocalLow"
+    (root / config.GAME_DIR / "mods" / "export").mkdir(parents=True)
+    return root
+
+
+def test_macos_crossover_and_whisky_bottles(home, monkeypatch):
+    on(monkeypatch, "darwin")
+    crossover = bottle(home / "Library" / "Application Support" / "CrossOver" / "Bottles" / "Steam")
+    whisky = bottle(home / "Library" / "Containers" / "com.isaacmarovitz.Whisky" / "Bottles" / "A1B2", "steamuser")
+    assert config.game_data_roots() == [home / "Library" / "Application Support", crossover, whisky]
+    assert config.default_export_dir() == crossover / EXPORT                  # no native game folder
+    monkeypatch.setattr(config, "DEFAULT_EXPORT_DIR", config.default_export_dir())   # as computed on a Mac
+    assert settings.detect_export_dir() == crossover / EXPORT
+    (home / "Library" / "Application Support" / config.GAME_DIR).mkdir(parents=True)
+    assert config.default_export_dir() == home / "Library" / "Application Support" / EXPORT   # native first
+
+
+def test_linux_wine_bottles_lutris(home, monkeypatch):
+    on(monkeypatch, "linux")
+    wine = bottle(home / ".wine", "me")
+    bottles = bottle(home / ".var" / "app" / "com.usebottles.bottles" / "data" / "bottles" / "bottles" / "Steam")
+    lutris = bottle(home / "Games" / "screen-stocks", "me")
+    roots = config.game_data_roots()
+    assert roots[-3:] == [wine, bottles, lutris]
+    assert config.default_export_dir() == wine / EXPORT                      # no Proton prefix holds the game
+    compat(home / ".steam" / "steam").joinpath(config.GAME_DIR).mkdir(parents=True)
+    assert config.default_export_dir() == compat(home / ".steam" / "steam") / EXPORT   # Proton first
+
+
 def test_child_env_restores_system_libraries(monkeypatch):
     monkeypatch.setattr(sys, "frozen", False, raising=False)
     assert settings.child_env() is None                              # from source: inherit

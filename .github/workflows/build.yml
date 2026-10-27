@@ -161,6 +161,15 @@ jobs:
       - name: Smoke test
         run: dist/ScreenStocksTradingBot.app/Contents/MacOS/ScreenStocksTradingBot --version
 
+      # opens the real window: page, scripts and the Python bridge must work (exit code 0)
+      - name: Web UI smoke test
+        timeout-minutes: 5
+        run: dist/ScreenStocksTradingBot.app/Contents/MacOS/ScreenStocksTradingBot --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/smoke.db"
+
+      - name: App log
+        if: always()
+        run: cat "$HOME/Library/Application Support/ScreenStocksTradingBot/app.log" || true
+
       # hdiutil sometimes fails with "Resource busy" on the runners (actions/runner-images#7522): retry
       - name: Disk image
         run: |
@@ -226,12 +235,74 @@ jobs:
 
       # tar keeps the executable bit
       - name: Archive
-        run: tar -C dist -czf "dist/ScreenStocksTradingBot-$VERSION-linux-x86_64.tar.gz" ScreenStocksTradingBot
+        run: |
+          install -m 755 installer/linux/install-apparmor-profile.sh dist/ScreenStocksTradingBot/
+          tar -C dist -czf "dist/ScreenStocksTradingBot-$VERSION-linux-x86_64.tar.gz" ScreenStocksTradingBot
 
       - uses: actions/upload-artifact@v4
         with:
           name: ScreenStocksTradingBot-${{ env.VERSION }}-linux-x86_64
           path: dist/*.tar.gz
+
+  # The Linux tarball on desktop-like systems (older and current Ubuntu), installed the way the README says:
+  # the web UI under Xvfb, the Qt WebEngine sandbox with and without the AppArmor profile, and the classic
+  # fallback when Qt cannot start.
+  linux-desktop:
+    needs: linux
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    env:
+      APP: ./ScreenStocksTradingBot/ScreenStocksTradingBot
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-linux-x86_64"
+          merge-multiple: true
+
+      - name: Unpack
+        run: tar -xzf ScreenStocksTradingBot-*-linux-x86_64.tar.gz
+
+      - name: Install the libraries the README lists, plus Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libxcomposite1 \
+            libxdamage1 libxrandr2 libxtst6 libasound2 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
+
+      - name: Web UI smoke test
+        timeout-minutes: 5
+        run: |
+          xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/smoke.db" 2>&1 | tee smoke.log
+          grep -q "smoke test: [1-9]" smoke.log
+
+      - name: AppArmor user namespace restriction - sandbox off without the profile, on with it
+        timeout-minutes: 10
+        run: |
+          if [ ! -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            echo "this kernel has no AppArmor user namespace restriction"; exit 0
+          fi
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
+          xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/off.db" 2>&1 | tee off.log
+          grep -q "sandbox off" off.log
+          sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh
+          xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/on.db" 2>&1 | tee on.log
+          grep -q "sandbox on" on.log
+          sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh --remove
+
+      - name: Qt cannot start - classic fallback instead of a crash
+        timeout-minutes: 5
+        run: |
+          set +e
+          QT_QPA_PLATFORM=missing xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/fb.db" 2>&1 | tee fallback.log
+          code=${PIPESTATUS[0]}
+          [ "$code" = 3 ] || { echo "expected exit code 3 (web UI unavailable, classic fallback), got $code"; exit 1; }
+          grep -q "Qt cannot start" fallback.log
 
   # The Windows files are published even when a macOS or Linux build failed (re-run it, then re-run this job).
   release:

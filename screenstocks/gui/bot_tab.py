@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from .. import bot
 from ..i18n import t
 from . import fmt
-from .theme import THEME
+from .theme import THEME, font
 from .widgets import SortableTree, scrolled
 
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ class Tip:
     def __init__(self, parent, text: str):
         self.text, self.win = text, None
         self.label = tk.Label(parent, text=" i ", bg=THEME["panel_alt"], fg=THEME["muted"], cursor="question_arrow",
-                              font=(THEME["font_bold"][0], 8, "bold italic"), bd=1, relief="solid")
+                              font=font(8, "bold italic"), bd=1, relief="solid")
         self.label.bind("<Enter>", self._show)
         self.label.bind("<Leave>", self._hide)
 

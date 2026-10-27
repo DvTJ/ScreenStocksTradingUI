@@ -46,7 +46,13 @@ def main() -> int:
     ap.add_argument("--debug-ui", action="store_true", help="web UI with developer tools")
     ap.add_argument("--version", action="version", version=f"ScreenStocks Trading Bot {__version__}")
     ap.add_argument("-v", "--verbose", action="store_true")
+    # CI checks of a build: open the web UI and quit once it works (exit 0; 1 = page broken, 2 = page never
+    # loaded, 3 = web UI unavailable), and the Qt start check that webview_available runs in a child process
+    ap.add_argument("--smoke-test", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--probe-web", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
+    if args.probe_web:
+        return _probe_web()
 
     setup_logging(args.verbose)
     log = logging.getLogger("main")
@@ -61,8 +67,8 @@ def main() -> int:
             _show_message(t("app.already_running"))
         return 1
 
-    need_setup = not args.headless and (args.setup or not settings.setup_done)
-    ui = args.ui or settings.ui
+    need_setup = not args.headless and not args.smoke_test and (args.setup or not settings.setup_done)
+    ui = "web" if args.smoke_test else args.ui or settings.ui
     web_ok, web_reason = False, ""
     if not args.headless and ui == "web":
         from screenstocks.web import webview_available
@@ -93,10 +99,10 @@ def main() -> int:
         try:
             # the web UI shows the setup wizard itself and starts the backend when it is finished
             from screenstocks.web.app import run as run_web
-            run_web(start_backend, setup=need_setup, debug=args.debug_ui)
+            web_works = run_web(start_backend, setup=need_setup, debug=args.debug_ui, smoke=args.smoke_test)
             if backend:
                 backend["collector"].join(timeout=2)
-            return 0
+            return 0 if web_works else 1
         except Exception as exc:  # e.g. WebView2 failed to start
             web_reason = f"{type(exc).__name__}: {exc}"
             log.exception("web UI failed, falling back to the classic interface")
@@ -104,6 +110,8 @@ def main() -> int:
                 need_setup = False
     if ui == "web" and not args.headless:
         log.warning("web UI not available (%s) - starting the classic interface", web_reason)
+        if args.smoke_test:
+            return 3
         _show_web_fallback(web_reason)
 
     if need_setup:
@@ -142,6 +150,14 @@ def main() -> int:
         collector.stop()
         return _database_failed(log, exc, args.headless)
     collector.join(timeout=2)
+    return 0
+
+
+def _probe_web() -> int:
+    """Child process of webview_available (Linux, Qt backend): Qt either starts here or aborts this process."""
+    from qtpy import QtWebEngineWidgets  # noqa: F401 - must be imported before the QApplication exists
+    from qtpy.QtWidgets import QApplication
+    QApplication(sys.argv[:1])
     return 0
 
 

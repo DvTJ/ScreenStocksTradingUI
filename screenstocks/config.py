@@ -35,18 +35,31 @@ def steam_libraries() -> list:
     return unique
 
 
+def wine_roots(prefixes) -> list:
+    """LocalLow of every Windows user in the given Wine prefixes (the last part may be a glob pattern)."""
+    return [p for prefix in prefixes
+            for p in sorted(prefix.parent.glob(prefix.name + "/drive_c/users/*/AppData/LocalLow"))]
+
+
 def game_data_roots() -> list:
     """Folders that may hold GAME_DIR on this OS, most likely first."""
     home = Path.home()
     if sys.platform == "win32":
         return [Path(os.environ.get("USERPROFILE", str(home))) / "AppData" / "LocalLow"]
     if sys.platform == "darwin":
-        return [home / "Library" / "Application Support"]
-    # No native Linux build: the Windows build runs under Steam Proton.
+        # native build first, then the Windows build in a CrossOver or Whisky bottle
+        return [home / "Library" / "Application Support"] + wine_roots([
+            home / "Library" / "Application Support" / "CrossOver" / "Bottles" / "*",
+            home / "Library" / "Containers" / "com.isaacmarovitz.Whisky" / "Bottles" / "*"])
+    # No native Linux build: the Windows build runs under Steam Proton (or plain Wine, Bottles, Lutris).
     proton = Path("pfx") / "drive_c" / "users" / "steamuser" / "AppData" / "LocalLow"
     libs = steam_libraries()
     return ([lib / "steamapps" / "compatdata" / app / proton for app in STEAM_APP_IDS for lib in libs]
-            + [Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config") / "unity3d"])
+            + [Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config") / "unity3d"]
+            + wine_roots([home / ".wine",
+                          home / ".local" / "share" / "bottles" / "bottles" / "*",
+                          home / ".var" / "app" / "com.usebottles.bottles" / "data" / "bottles" / "bottles" / "*",
+                          home / "Games" / "*"]))
 
 
 def default_export_dir() -> Path:
