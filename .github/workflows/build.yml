@@ -256,6 +256,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       APP: ./ScreenStocksTradingBot/ScreenStocksTradingBot
+      XVFB_SCREEN: -screen 0 1600x1000x24     # xvfb-run's default 8-bit screen has no OpenGL visuals
     defaults:
       run:
         shell: bash
@@ -286,7 +287,7 @@ jobs:
           echo "system libraries the bundle still lacks:"
           LD_LIBRARY_PATH=$(find "$PWD/ScreenStocksTradingBot" -type d | tr '\n' ':') \
             find ScreenStocksTradingBot -name "*.so*" -type f -exec ldd {} + 2>/dev/null | grep "not found" | sort -u || true
-          xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/smoke.db" 2>&1 | tee smoke.log
+          xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/smoke.db" 2>&1 | tee smoke.log
           grep -q "smoke test: [1-9]" smoke.log
 
       - name: AppArmor user namespace restriction - sandbox off without the profile, on with it
@@ -296,7 +297,7 @@ jobs:
             echo "this kernel has no AppArmor user namespace restriction"; exit 0
           fi
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
-          xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/off.db" 2>&1 | tee off.log
+          xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/off.db" 2>&1 | tee off.log
           grep -q "sandbox off" off.log
           if [ ! -e /etc/apparmor.d/abi/4.0 ]; then
             # e.g. 22.04: the restriction is off by default and AppArmor 3 cannot grant user namespaces
@@ -304,7 +305,7 @@ jobs:
             exit 0
           fi
           sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh
-          xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/on.db" 2>&1 | tee on.log
+          xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/on.db" 2>&1 | tee on.log
           grep -q "sandbox on" on.log
           sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh --remove
 
@@ -312,7 +313,7 @@ jobs:
         timeout-minutes: 5
         run: |
           set +e
-          LIBGL_DRIVERS_PATH=/nonexistent QT_XCB_GL_INTEGRATION=xcb_glx xvfb-run -a "$APP" --smoke-test \
+          LIBGL_DRIVERS_PATH=/nonexistent QT_XCB_GL_INTEGRATION=xcb_glx xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test \
             --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/gl.db" 2>&1 | tee nogl.log
           code=${PIPESTATUS[0]}
           [ "$code" = 0 ] || [ "$code" = 3 ] || { echo "expected the web UI or the classic fallback, got exit code $code"; exit 1; }
@@ -321,7 +322,7 @@ jobs:
         timeout-minutes: 5
         run: |
           set +e
-          QT_QPA_PLATFORM=missing xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/fb.db" 2>&1 | tee fallback.log
+          QT_QPA_PLATFORM=missing xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/fb.db" 2>&1 | tee fallback.log
           code=${PIPESTATUS[0]}
           [ "$code" = 3 ] || { echo "expected exit code 3 (web UI unavailable, classic fallback), got $code"; exit 1; }
           grep -q "Qt cannot start" fallback.log
