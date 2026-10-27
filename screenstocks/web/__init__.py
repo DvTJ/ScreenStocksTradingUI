@@ -117,12 +117,18 @@ def qt_sandbox_fix(flag: Path = Path("/proc/sys/kernel/apparmor_restrict_unprivi
                 "(sudo ./install-apparmor-profile.sh in the app folder keeps it on)")
 
 
-def qt_probe() -> str:
-    """"" if Qt starts in a child process, else why not. A missing system library (e.g. libxcb-cursor0) makes Qt
-    abort the whole process, so the web UI could not fall back to the classic one by itself."""
+# Qt WebEngine without OpenGL: Chromium draws in software, Qt Quick too, and Qt does not touch GLX at all
+QT_SOFTWARE_RENDERING = {"QTWEBENGINE_CHROMIUM_FLAGS": "--disable-gpu", "QT_QUICK_BACKEND": "software",
+                         "QT_XCB_GL_INTEGRATION": "none"}
+
+
+def qt_probe(env: Optional[dict] = None) -> str:
+    """"" if Qt WebEngine shows a page in a child process, else why not. A missing system library or a broken
+    OpenGL makes Qt abort the whole process, so the web UI could not fall back to the classic one by itself."""
     from ..settings import self_command
     try:
-        result = subprocess.run(self_command("--probe-web"), capture_output=True, text=True, timeout=60)
+        result = subprocess.run(self_command("--probe-web"), capture_output=True, text=True, timeout=90,
+                                env={**os.environ, **(env or {})})
     except (OSError, subprocess.SubprocessError) as exc:
         return f"Qt check failed: {exc}"
     if result.returncode == 0:
@@ -147,7 +153,11 @@ def webview_available() -> tuple[bool, str]:
         if not any(importlib.util.find_spec(m) for m in ("gi", "qtpy")):
             return False, "no pywebview backend (GTK WebKit or Qt) installed"
         if importlib.util.find_spec("gi") is None:
+            qt_sandbox_fix()                  # before the check: its child process inherits the decision
             reason = qt_probe()
             if reason:
-                return False, reason
+                if qt_probe(QT_SOFTWARE_RENDERING):
+                    return False, reason
+                os.environ.update(QT_SOFTWARE_RENDERING)
+                log.warning("Qt WebEngine cannot use OpenGL (%s) - drawing in software", reason)
     return True, ""

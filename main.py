@@ -177,17 +177,25 @@ def _probe_web() -> int:
     """Child process of webview_available (Linux, Qt backend): Qt either starts here or aborts this process.
     The last stderr line is the reason shown to the user."""
     try:
-        from qtpy import QtWebEngineWidgets  # noqa: F401 - must be imported before the QApplication exists
-        from qtpy.QtGui import QOpenGLContext
+        from qtpy.QtCore import Qt, QTimer
+        from qtpy.QtWebEngineWidgets import QWebEngineView   # before the QApplication exists
         from qtpy.QtWidgets import QApplication
     except Exception as exc:  # e.g. a missing system library: "libGL.so.1: cannot open shared object file"
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
+    # render a tiny page off screen: platform plugin, OpenGL, GPU process and sandbox all have to work
     app = QApplication(sys.argv[:1])
-    if not QOpenGLContext().create():         # Qt WebEngine needs OpenGL; a broken GLX aborts right here instead
-        print("OpenGL is not available", file=sys.stderr)
+    view = QWebEngineView()
+    view.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    loaded: list = []
+    view.loadFinished.connect(lambda ok: (loaded.append(ok), QTimer.singleShot(500, app.quit)))
+    QTimer.singleShot(60000, app.quit)
+    view.setHtml("<p>ScreenStocks</p>")
+    view.show()
+    app.exec()
+    if not any(loaded):
+        print("the web view did not show a page", file=sys.stderr)
         return 1
-    del app
     return 0
 
 

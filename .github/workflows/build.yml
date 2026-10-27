@@ -312,14 +312,12 @@ jobs:
           grep -q "sandbox on" on.log
           sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh --remove
 
-      - name: No OpenGL - classic fallback instead of a crash
+      - name: Broken OpenGL - the web UI draws in software instead of crashing
         timeout-minutes: 5
         run: |
-          set +e
-          LIBGL_DRIVERS_PATH=/nonexistent QT_XCB_GL_INTEGRATION=xcb_glx xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test \
+          LIBGL_DRIVERS_PATH=/nonexistent xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test \
             --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/gl.db" 2>&1 | tee nogl.log
-          code=${PIPESTATUS[0]}
-          [ "$code" = 0 ] || [ "$code" = 3 ] || { echo "expected the web UI or the classic fallback, got exit code $code"; exit 1; }
+          grep -q "smoke test: [1-9]" nogl.log
 
       - name: Qt cannot start - classic fallback instead of a crash
         timeout-minutes: 5

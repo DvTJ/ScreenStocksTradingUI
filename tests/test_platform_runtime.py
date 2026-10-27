@@ -78,9 +78,16 @@ def test_qt_probe(web, monkeypatch, code, stderr, reason):
 
 def test_qt_only_linux_setup_is_probed(web, monkeypatch):
     _backends(monkeypatch, "qtpy")
-    monkeypatch.setattr(web, "qt_probe", lambda: "Qt cannot start (exit code -6)")
-    assert web.webview_available() == (False, "Qt cannot start (exit code -6)")
+    monkeypatch.setattr(web, "qt_sandbox_fix", lambda: None)
+    for key in web.QT_SOFTWARE_RENDERING:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(web, "qt_probe", lambda env=None: "Qt cannot start (exit code -6)")
+    assert web.webview_available() == (False, "Qt cannot start (exit code -6)")      # not even in software
+    monkeypatch.setattr(web, "qt_probe", lambda env=None: "" if env else "Qt cannot start (exit code -6)")
+    assert web.webview_available() == (True, "")                                     # broken OpenGL: software
+    assert os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] == "--disable-gpu"
     _backends(monkeypatch, "gi", "qtpy")                    # GTK is used then: no probe
+    monkeypatch.setattr(web, "qt_probe", lambda env=None: pytest.fail("probed"))
     assert web.webview_available() == (True, "")
 
 
@@ -140,7 +147,8 @@ def test_webview_linux_needs_backend(web, monkeypatch):
     ok, reason = web.webview_available()
     assert not ok and "backend" in reason
     _backends(monkeypatch, "qtpy")
-    monkeypatch.setattr(web, "qt_probe", lambda: "")          # Qt starts (checked in a child process)
+    monkeypatch.setattr(web, "qt_sandbox_fix", lambda: None)
+    monkeypatch.setattr(web, "qt_probe", lambda env=None: "")  # Qt starts (checked in a child process)
     assert web.webview_available() == (True, "")
 
 
