@@ -34,7 +34,9 @@ def resource_path(relative: str) -> Path:
 def _unix_dir(xdg_var: str, xdg_default: str) -> Path:
     home = Path.home()
     legacy = home / APP_NAME
-    if legacy.exists():
+    # older source runs kept their data there - but a Linux build unpacked in ~ is a folder of that name, too
+    if ((legacy / "settings.json").is_file() or (legacy / "screenstocks.db").is_file()) \
+            and not (is_frozen() and legacy.resolve() == Path(sys.executable).resolve().parent):
         return legacy
     if sys.platform == "darwin":
         return home / "Library" / "Application Support" / APP_NAME
@@ -175,6 +177,33 @@ def enable_mod_features(export_dir: Path) -> None:
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=4), encoding="utf-8")
     os.replace(tmp, path)
+
+
+def child_env() -> Optional[dict]:
+    """Environment for system programs (file manager, browser), None = inherit. A frozen Linux build points
+    LD_LIBRARY_PATH at its bundled libraries, which can break programs of a newer distribution."""
+    if not (is_frozen() and sys.platform.startswith("linux")):
+        return None
+    env = dict(os.environ)
+    orig = env.pop("LD_LIBRARY_PATH_ORIG", None)    # saved by the PyInstaller bootloader
+    if orig is None:
+        env.pop("LD_LIBRARY_PATH", None)
+    else:
+        env["LD_LIBRARY_PATH"] = orig
+    return env
+
+
+def open_url(url: str) -> None:
+    """webbrowser.open, with the system's own libraries in a frozen Linux build."""
+    env = child_env()
+    if env is not None:
+        try:
+            subprocess.Popen(["xdg-open", url], env=env, close_fds=True)
+            return
+        except OSError:
+            pass
+    import webbrowser
+    webbrowser.open(url)
 
 
 def restart_app() -> None:

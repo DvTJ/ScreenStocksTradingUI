@@ -69,6 +69,17 @@ def unblock_bundled_dlls() -> None:
                     pass                         # not marked, or no write access
 
 
+def qt_sandbox_fix(flag: Path = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")) -> None:
+    """Ubuntu 23.10+ blocks the user namespaces Qt WebEngine's sandbox needs (AppArmor); its renderer then dies and
+    the window stays blank. Only then run it without the sandbox - the page is the app's own local files."""
+    try:
+        restricted = flag.read_text().strip() == "1"
+    except OSError:
+        return
+    if restricted:
+        os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+
+
 def webview_available() -> tuple[bool, str]:
     """(usable, reason) - the web UI needs pywebview and, on Windows, the WebView2 runtime,
     on Linux a GTK (gi) or Qt (qtpy) backend. Cheap checks only, no window is started."""

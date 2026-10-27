@@ -5,6 +5,8 @@ in screenstocks/bot.py and is shared with the classic Tkinter tab.
 """
 
 import os
+import subprocess
+import sys
 import threading
 import time
 from dataclasses import asdict
@@ -12,7 +14,7 @@ from typing import Optional
 
 import webview
 
-from .. import bot
+from .. import bot, settings as settings_mod
 from ..i18n import t
 
 JSON_TYPES = ("JSON (*.json)",)
@@ -165,7 +167,11 @@ class BotApi:
         if os.path.isfile(path):
             bot.reveal(path)
         elif os.path.isdir(os.path.dirname(path)):         # the file is gone: at least open its folder
-            os.startfile(os.path.dirname(path)) if os.name == "nt" else bot.reveal(path)
+            if os.name == "nt":
+                os.startfile(os.path.dirname(path))
+            else:                                          # macOS "open -R" fails on a missing file
+                subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", os.path.dirname(path)],
+                                 env=settings_mod.child_env())
 
     def bot_experimental(self, ack: bool = False) -> bool:
         """Whether the "experimental" warning was already acknowledged; ack=True records it."""

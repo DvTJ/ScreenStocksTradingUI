@@ -57,20 +57,21 @@ class SettingsApi:
     def _save_dialog(self, directory: str, filename: str) -> Optional[str]:
         """Save dialog without the "replace existing file?" question: an existing database is
         opened, not overwritten (same as the classic dialog with confirmoverwrite=False)."""
-        try:
-            from webview.platforms.winforms import BrowserView, WinForms
-            owner = BrowserView.instances.get(self._window.uid)
-            dialog = WinForms.SaveFileDialog()
-            dialog.Filter = "SQLite (*.db)|*.db|* (*.*)|*.*"
-            dialog.InitialDirectory = directory
-            dialog.FileName = filename
-            dialog.OverwritePrompt = False
-            dialog.DefaultExt = "db"
-            if dialog.ShowDialog(owner) == WinForms.DialogResult.OK:
-                return str(dialog.FileName)
-            return None
-        except Exception:
-            log.exception("own save dialog failed - using the pywebview dialog")
+        if sys.platform == "win32":
+            try:
+                from webview.platforms.winforms import BrowserView, WinForms
+                owner = BrowserView.instances.get(self._window.uid)
+                dialog = WinForms.SaveFileDialog()
+                dialog.Filter = "SQLite (*.db)|*.db|* (*.*)|*.*"
+                dialog.InitialDirectory = directory
+                dialog.FileName = filename
+                dialog.OverwritePrompt = False
+                dialog.DefaultExt = "db"
+                if dialog.ShowDialog(owner) == WinForms.DialogResult.OK:
+                    return str(dialog.FileName)
+                return None
+            except Exception:
+                log.exception("own save dialog failed - using the pywebview dialog")
         result = self._window.create_file_dialog(webview.FileDialog.SAVE, directory=directory, save_filename=filename,
                                                  file_types=("SQLite (*.db)", "All files (*.*)"))
         return str(result[0] if isinstance(result, (tuple, list)) else result) if result else None

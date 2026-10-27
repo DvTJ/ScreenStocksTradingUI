@@ -11,7 +11,6 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
 import threading
-import webbrowser
 
 from .. import __version__, config, config_io, settings as settings_mod, updater
 from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, AutomationEngine, condition_met,
@@ -1478,7 +1477,7 @@ class App(tk.Tk):
         if settings_mod.is_frozen() and sys.platform == "win32":
             self.install_btn.pack(side="right", padx=(6, 0))
         tk.Button(self.update_bar, text=t("update.open_page"), bg=THEME["panel_alt"], fg=THEME["fg"],
-                  command=lambda: self._release and webbrowser.open(self._release.page_url),
+                  command=lambda: self._release and settings_mod.open_url(self._release.page_url),
                   **bar_btn).pack(side="right", padx=(6, 0))
         self._header = header
 

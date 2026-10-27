@@ -41,8 +41,11 @@ def acquire(db_path: Path, wait_s: float = WAIT_S) -> bool:
         return False
     import fcntl
     path = Path(db_path).with_name(Path(db_path).name + ".lock")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fh = open(path, "a")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(path, "a")
+    except OSError:
+        return True                              # cannot tell (e.g. drive not mounted): the database error explains it
     deadline = time.time() + wait_s
     while True:
         try:

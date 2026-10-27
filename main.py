@@ -170,7 +170,8 @@ def _show_web_fallback(reason: str) -> None:
     root = tk.Tk()
     root.withdraw()
     if sys.platform != "win32":  # WebView2 is Windows only; macOS / Linux just get the reason (and a hint)
-        key = "web.fallback_info" if sys.platform == "darwin" else "web.fallback_info_linux"
+        key = ("web.fallback_info" if sys.platform == "darwin" else
+               "web.fallback_info_linux_app" if settings_mod.is_frozen() else "web.fallback_info_linux")
         messagebox.showinfo(t("web.fallback_title"), t(key, reason=reason), parent=root)
         root.destroy()
         return

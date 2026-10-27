@@ -43,6 +43,7 @@ from .events import FINAL as EVENT_FINAL, load_settings as load_event_settings, 
 from .commands import ACTIONS, CommandWriter, reason_text, status_text
 from .gui import fmt
 from .i18n import de, en, fr, t
+from .settings import child_env
 from .storage import Storage
 
 log = logging.getLogger(__name__)
@@ -927,7 +928,7 @@ def reveal(path) -> None:
     elif sys.platform == "darwin":
         subprocess.Popen(["open", "-R", path])
     else:
-        subprocess.Popen(["xdg-open", os.path.dirname(path)])
+        subprocess.Popen(["xdg-open", os.path.dirname(path)], env=child_env())
 
 
 def clear_history(db: Storage, trader: Optional["BotTrader"] = None) -> None:

@@ -12,6 +12,7 @@ from ..automation import AutomationEngine
 from ..collector import Collector
 from ..i18n import t
 from ..settings import resource_path
+from . import qt_sandbox_fix
 from .bridge import Bridge
 
 log = logging.getLogger(__name__)
@@ -39,6 +40,8 @@ def run(start_backend: Callable[[], tuple[Collector, AutomationEngine, Path, Pat
         width=1500, height=930, min_size=(900, 600), background_color="#0f1012", text_select=False)
     bridge._attach(window)
     window.events.closed += bridge._shutdown
+    if sys.platform.startswith("linux"):
+        qt_sandbox_fix()
     icon = resource_path("assets/icon.ico" if sys.platform == "win32" else "assets/icon.png")  # GTK / Qt want a png
     webview.start(debug=debug, icon=str(icon) if icon.exists() else None)
     bridge._shutdown()

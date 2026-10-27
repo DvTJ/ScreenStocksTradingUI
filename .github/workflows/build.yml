@@ -161,8 +161,14 @@ jobs:
       - name: Smoke test
         run: dist/ScreenStocksTradingBot.app/Contents/MacOS/ScreenStocksTradingBot --version
 
+      # hdiutil sometimes fails with "Resource busy" on the runners (actions/runner-images#7522): retry
       - name: Disk image
-        run: hdiutil create -volname "ScreenStocks Trading Bot" -srcfolder dist/ScreenStocksTradingBot.app -ov -format UDZO "dist/ScreenStocksTradingBot-$VERSION-macos-${{ matrix.arch }}.dmg"
+        run: |
+          for i in 1 2 3 4 5; do
+            hdiutil create -volname "ScreenStocks Trading Bot" -srcfolder dist/ScreenStocksTradingBot.app -ov -format UDZO "dist/ScreenStocksTradingBot-$VERSION-macos-${{ matrix.arch }}.dmg" && exit 0
+            sleep 10
+          done
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:
@@ -227,8 +233,9 @@ jobs:
           name: ScreenStocksTradingBot-${{ env.VERSION }}-linux-x86_64
           path: dist/*.tar.gz
 
+  # The Windows files are published even when a macOS or Linux build failed (re-run it, then re-run this job).
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.windows.result == 'success' }}
     needs: [windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
@@ -245,5 +252,5 @@ jobs:
             dist/*-portable.zip
             dist/*.dmg
             dist/*.tar.gz
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           generate_release_notes: true

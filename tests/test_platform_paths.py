@@ -95,11 +95,40 @@ def test_linux_xdg_set(home, monkeypatch):
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin"])
-def test_legacy_home_folder_kept(home, monkeypatch, platform):
+@pytest.mark.parametrize("old_file", ["settings.json", "screenstocks.db"])
+def test_legacy_home_folder_kept(home, monkeypatch, platform, old_file):
     on(monkeypatch, platform)
     (home / APP).mkdir()
+    (home / APP / old_file).write_text("{}")
     assert settings.user_config_dir() == home / APP
     assert settings.user_data_dir() == home / APP
+
+
+def test_unpacked_app_folder_is_not_legacy(home, monkeypatch):
+    """The Linux build unpacked in ~ is ~/ScreenStocksTradingBot: its own files must not count as old data."""
+    on(monkeypatch, "linux")
+    app = home / APP
+    app.mkdir()
+    assert settings.user_config_dir() == home / ".config" / APP      # empty folder: not old data
+    (app / "settings.json").write_text("{}")                          # e.g. an earlier build wrote it there
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(app / APP))
+    assert settings.user_config_dir() == home / ".config" / APP
+    assert settings.user_data_dir() == home / ".local" / "share" / APP
+
+
+def test_child_env_restores_system_libraries(monkeypatch):
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    assert settings.child_env() is None                              # from source: inherit
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    on(monkeypatch, "win32")
+    assert settings.child_env() is None                              # Windows: unchanged
+    on(monkeypatch, "linux")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/bundle")
+    monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/usr/local/lib")
+    assert settings.child_env()["LD_LIBRARY_PATH"] == "/usr/local/lib"
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG")
+    assert "LD_LIBRARY_PATH" not in settings.child_env()
 
 
 def test_linux_proton_default(home, monkeypatch):

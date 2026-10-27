@@ -1,5 +1,6 @@
 import importlib
 import importlib.util
+import os
 import subprocess
 import sys
 import types
@@ -34,6 +35,25 @@ def _backends(monkeypatch, *present):
     monkeypatch.setattr(importlib.util, "find_spec",
                         lambda name, *a: (object() if name in present else None) if name in ("gi", "qtpy")
                         else real(name, *a))
+
+
+@pytest.mark.parametrize("flag, expected", [("1\n", "1"), ("0\n", None), (None, None)])
+def test_qt_sandbox_only_off_when_blocked(web, monkeypatch, tmp_path, flag, expected):
+    monkeypatch.delenv("QTWEBENGINE_DISABLE_SANDBOX", raising=False)
+    path = tmp_path / "apparmor_restrict_unprivileged_userns"
+    if flag is not None:
+        path.write_text(flag)
+    web.qt_sandbox_fix(path)
+    assert os.environ.get("QTWEBENGINE_DISABLE_SANDBOX") == expected
+
+
+def test_lock_unreachable_db_folder_does_not_crash(tmp_path):
+    from screenstocks import single_instance
+    if sys.platform == "win32":
+        pytest.skip("the POSIX lock file branch")
+    blocker = tmp_path / "file"
+    blocker.write_text("")
+    assert single_instance.acquire(blocker / "sub" / "screenstocks.db", wait_s=0) is True
 
 
 def test_web_imports_without_winreg(web):
