@@ -282,6 +282,9 @@ jobs:
         timeout-minutes: 5
         run: |
           "$APP" --probe-web || true      # shows why Qt cannot start, if it cannot (needs no display for imports)
+          echo "system libraries the bundle still lacks:"
+          LD_LIBRARY_PATH=$(find "$PWD/ScreenStocksTradingBot" -type d | tr '\n' ':') \
+            find ScreenStocksTradingBot -name "*.so*" -type f -exec ldd {} + 2>/dev/null | grep "not found" | sort -u || true
           xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/smoke.db" 2>&1 | tee smoke.log
           grep -q "smoke test: [1-9]" smoke.log
 

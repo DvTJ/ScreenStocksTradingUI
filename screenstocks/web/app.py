@@ -1,5 +1,6 @@
 """Starts the web UI window."""
 
+import faulthandler
 import importlib.util
 import logging
 import os
@@ -36,7 +37,11 @@ SMOKE_TIMEOUT_S = 90
 def _smoke_test(window, result: dict) -> None:
     """--smoke-test (CI): wait until the page shows its tabs - the page, its scripts and the Python bridge (init)
     work - then close the window. A page that never loads ends the process with exit code 2."""
-    watchdog = threading.Timer(SMOKE_TIMEOUT_S + 30, lambda: os._exit(2))
+    def hung() -> None:            # show where it hangs, then fail
+        faulthandler.dump_traceback(all_threads=True)
+        os._exit(2)
+
+    watchdog = threading.Timer(SMOKE_TIMEOUT_S + 30, hung)
     watchdog.daemon = True
     watchdog.start()
     deadline = time.monotonic() + SMOKE_TIMEOUT_S
