@@ -6,6 +6,7 @@ in %LOCALAPPDATA%\\ScreenStocksTradingBot - the install folder may be read-only.
 
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
@@ -69,6 +70,20 @@ def detect_export_dir() -> Optional[Path]:
         if c.is_dir():
             return c
     return None
+
+
+def game_settings_file() -> Path:
+    return config.DEFAULT_EXPORT_DIR.parent.parent / "thesmallshort_online_settings.sav"
+
+
+def mod_support_enabled() -> Optional[bool]:
+    """The game's "modSupport" flag (read-only), None when the settings file is missing or unreadable."""
+    try:
+        text = game_settings_file().read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    m = re.search(r"\"modSupport\"\s*:\s*(true|false)", text, re.IGNORECASE)
+    return m.group(1).lower() == "true" if m else None
 
 
 @dataclass

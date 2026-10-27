@@ -102,10 +102,20 @@ class SettingsDialog(tk.Toplevel):
         ok = path.is_dir()
         ttk.Label(self.export_checks, text=t("setup.game.dir_ok") if ok else t("setup.game.dir_missing"),
                   style="Ok.TLabel" if ok else "Bad.TLabel").pack(anchor="w")
+        found = (path / config.MARKET_FILE).exists()
         if ok:
-            found = (path / config.MARKET_FILE).exists()
             ttk.Label(self.export_checks, text=t("setup.game.market_ok") if found else t("setup.game.market_missing"),
-                      style="Ok.TLabel" if found else "Warn.TLabel").pack(anchor="w")
+                      style="Ok.TLabel" if found else "Warn.TLabel", wraplength=640, justify="left").pack(anchor="w")
+        if not found:
+            modsupport = settings_mod.mod_support_enabled()
+            key, style = {True: ("setup.game.modsupport_on", "Ok"), False: ("setup.game.modsupport_off", "Bad")}.get(
+                modsupport, ("setup.game.modsupport_unknown", "Warn"))
+            ttk.Label(self.export_checks, text=t(key), style=f"{style}.TLabel", wraplength=640,
+                      justify="left").pack(anchor="w")
+            if modsupport is not True:
+                ttk.Label(self.export_checks, text=t("setup.game.modsupport_steps",
+                                                     path=str(settings_mod.game_settings_file())),
+                          style="Body.TLabel", wraplength=640, justify="left").pack(anchor="w", pady=(4, 6))
         mods = settings_mod.read_mod_settings(path)
         if mods is not None and not (mods.get("export") and mods.get("commands")):
             ttk.Label(self.export_checks, text=t("setup.game.mods_flags", export=mods.get("export"),

@@ -70,6 +70,15 @@ Download the latest `ScreenStocksTradingBot-Setup-x.y.z.exe` from
 [Releases](../../releases) and run it. No admin rights are needed (per-user install).
 A portable ZIP is attached to every release as well.
 
+**Enable mod support in the game first.** The game only writes `market.json` once mod support is on:
+
+1. Close Screen Stocks.
+2. Open `%USERPROFILE%\AppData\LocalLow\Conradical Games\Screen Stocks\thesmallshort_online_settings.sav`
+   in a text editor and change `"modSupport" : false` to `"modSupport" : true`.
+3. Start the game – it creates the `mods` folder (`export`, `commands`, `skins`).
+
+The setup wizard checks this flag and shows these steps when `market.json` is missing.
+
 On first start a short setup wizard asks for:
 
 1. **Language** – Deutsch / English / Français
