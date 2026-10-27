@@ -13,8 +13,8 @@ import webview
 from .. import config_io
 from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, TRAILING_ENTRY, activation_reached,
                           condition_met, describe_trigger,
-                          has_position, kind_name, mode_name, needs_position, side_name, status_display,
-                          status_msg, trigger_price)
+                          has_position, kind_name, mode_name, needs_position, round_help, side_name,
+                          status_display, status_msg, trigger_price)
 from ..commands import normalize_percent
 from ..events import EventSettings, load_settings as load_event_settings, save_settings as save_event_settings
 from ..gui import fmt as pyfmt
@@ -43,8 +43,12 @@ class AutomationApi:
             value = _num(form.get("value"))
             pct = normalize_percent(_num(form.get("percent")))
             confirm = max(0.0, _num(form.get("confirm_s") or 0))
+            times = _num(form.get("repeat_times") or 0)
+            wait = _num(form.get("repeat_wait_min") or 0) * 60
         except (TypeError, ValueError):
             return None, t("auto.invalid_form")
+        if times < 0 or times != int(times) or wait < 0:
+            return None, t("auto.invalid_repeat")
         kind = form.get("kind") if form.get("kind") in KIND_KEYS else None
         side = form.get("side") if form.get("side") in SIDE_KEYS else "long"
         if not kind or not form.get("stock_id"):
@@ -63,7 +67,8 @@ class AutomationApi:
             if activation <= 0:
                 return None, t("auto.invalid_activation")
         rule = dict(id=0, stock_id=str(form["stock_id"]), kind=kind, side=side, mode=mode, value=value, percent=pct,
-                    confirm_s=confirm, extreme=None, repeat=int(bool(form.get("repeat"))), runs=0, activation=activation)
+                    confirm_s=confirm, extreme=None, repeat=int(bool(form.get("repeat"))), runs=0, activation=activation,
+                    repeat_times=int(times), repeat_wait_s=wait)
         if value <= 0 or (mode == "pct" and value >= 100 and kind != "take_profit"):
             return None, t("auto.invalid_value")
         return rule, ""
@@ -150,6 +155,8 @@ class AutomationApi:
             would_fire = bool(price and trig and condition_met(probe, price, trig)
                               and (not needs_position(rule) or has_position(rule, pos)))
         lines.append(t("auto.repeat_on_help") if form.get("repeat") else t("auto.repeat_off_help"))
+        if rule and round_help(rule):
+            lines.append(round_help(rule))
         return {"help": lines, "would_fire": would_fire,
                 "would_fire_text": t("auto.would_fire", price=pyfmt.price(price)) if would_fire else ""}
 
@@ -162,6 +169,8 @@ class AutomationApi:
         return dict(id=r["id"], stock_id=r["stock_id"], kind=r["kind"], side=r["side"], mode=r["mode"],
                     value=f"{r['value']:g}".replace(".", pyfmt.decimal_sep()), percent=r["percent"],
                     confirm_s=f"{r['confirm_s']:g}", repeat=bool(r["repeat"]),
+                    repeat_times=r["repeat_times"] or "",
+                    repeat_wait_min=f"{r['repeat_wait_s'] / 60:g}" if r["repeat_wait_s"] else "",
                     activation=f"{r['activation']:g}".replace(".", pyfmt.decimal_sep()) if r["activation"] else "")
 
     # -------------------------------------------------------------------- write
@@ -179,7 +188,8 @@ class AutomationApi:
                 db.update_rule(rid, stock_id=rule["stock_id"], kind=rule["kind"], side=rule["side"], mode=rule["mode"],
                                value=rule["value"], percent=rule["percent"], confirm_s=rule["confirm_s"],
                                repeat=rule["repeat"], activation=rule["activation"], extreme=None,
-                               status=status_msg("rule.st.active"))
+                               repeat_times=rule["repeat_times"], repeat_wait_s=rule["repeat_wait_s"],
+                               pause_until_ms=None, status=status_msg("rule.st.active"))
                 db.log_rule(self._now_ms(), rid, rule["stock_id"],
                             t("rule.log.edited", kind=kind_name(rule["kind"]), trigger=trigger, p=rule["percent"],
                               rep=" ↻" if rule["repeat"] else ""))
@@ -187,7 +197,8 @@ class AutomationApi:
             rid = db.add_rule(rule["stock_id"], rule["kind"], rule["side"], rule["mode"], rule["value"],
                               rule["percent"], rule["confirm_s"], self._now_ms(),
                               repeat=bool(rule["repeat"]), status=status_msg("rule.st.active"),
-                              activation=rule["activation"])
+                              activation=rule["activation"], repeat_times=rule["repeat_times"],
+                              repeat_wait_s=rule["repeat_wait_s"])
             db.log_rule(self._now_ms(), rid, rule["stock_id"],
                         t("rule.log.created", kind=kind_name(rule["kind"]),
                           side=side_name(rule["side"]) if rule["kind"] in EXIT_KINDS else "",
@@ -204,7 +215,7 @@ class AutomationApi:
                 return
             on = not r["enabled"]
             self._db.update_rule(r["id"], enabled=int(on), status=status_msg("rule.st.active") if on else status_msg("rule.st.disabled"),
-                                 **({"extreme": None} if on else {}))
+                                 **({"extreme": None, "pause_until_ms": None} if on else {}))
             self._db.log_rule(self._now_ms(), r["id"], r["stock_id"],
                               t("rule.log.enabled") if on else t("rule.log.disabled_manual"))
 

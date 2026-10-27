@@ -129,7 +129,10 @@ CREATE TABLE IF NOT EXISTS rules (
     triggered_ms INTEGER,
     repeat       INTEGER NOT NULL DEFAULT 0,
     runs         INTEGER NOT NULL DEFAULT 0,
-    activation   REAL                -- trailing buy / short: start following the price only past this level
+    activation   REAL,               -- trailing buy / short: start following the price only past this level
+    repeat_times INTEGER NOT NULL DEFAULT 0,   -- repeat in rounds of this many runs (0 = no rounds)
+    repeat_wait_s REAL   NOT NULL DEFAULT 0,   -- pause after a round (0 = switch off after the round)
+    pause_until_ms INTEGER                     -- end of the current pause
 );
 
 CREATE TABLE IF NOT EXISTS rule_log (
@@ -227,6 +230,10 @@ class Storage:
             self.conn.execute("ALTER TABLE rules ADD COLUMN runs INTEGER NOT NULL DEFAULT 0")
         if "activation" not in rule_cols:
             self.conn.execute("ALTER TABLE rules ADD COLUMN activation REAL")
+        if "repeat_times" not in rule_cols:
+            self.conn.execute("ALTER TABLE rules ADD COLUMN repeat_times INTEGER NOT NULL DEFAULT 0")
+            self.conn.execute("ALTER TABLE rules ADD COLUMN repeat_wait_s REAL NOT NULL DEFAULT 0")
+            self.conn.execute("ALTER TABLE rules ADD COLUMN pause_until_ms INTEGER")
 
     def close(self) -> None:
         self.conn.close()
@@ -727,18 +734,21 @@ class Storage:
 
     def add_rule(self, stock_id: str, kind: str, side: str, mode: str, value: float,
                  percent: int, confirm_s: float, created_ms: int, repeat: bool = False,
-                 status: str = "", activation: Optional[float] = None) -> int:
+                 status: str = "", activation: Optional[float] = None,
+                 repeat_times: int = 0, repeat_wait_s: float = 0.0) -> int:
         cur = self.conn.execute(
             """INSERT INTO rules (stock_id, kind, side, mode, value, percent, confirm_s, enabled, status,
-                                   created_ms, repeat, activation)
-               VALUES (?,?,?,?,?,?,?,1,?,?,?,?)""",
-            (stock_id, kind, side, mode, value, percent, confirm_s, status, created_ms, int(repeat), activation))
+                                   created_ms, repeat, activation, repeat_times, repeat_wait_s)
+               VALUES (?,?,?,?,?,?,?,1,?,?,?,?,?,?)""",
+            (stock_id, kind, side, mode, value, percent, confirm_s, status, created_ms, int(repeat), activation,
+             int(repeat_times), float(repeat_wait_s)))
         self.conn.commit()
         return cur.lastrowid
 
     def update_rule(self, rule_id: int, **fields) -> None:
         allowed = {"enabled", "extreme", "status", "triggered_ms", "repeat", "runs",
-                   "stock_id", "kind", "side", "mode", "value", "percent", "confirm_s", "activation"}
+                   "stock_id", "kind", "side", "mode", "value", "percent", "confirm_s", "activation",
+                   "repeat_times", "repeat_wait_s", "pause_until_ms"}
         assert set(fields) <= allowed, fields
         sets = ", ".join(f"{k}=?" for k in fields)
         self.conn.execute(f"UPDATE rules SET {sets} WHERE id=?", (*fields.values(), rule_id))
