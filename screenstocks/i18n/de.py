@@ -630,7 +630,7 @@ STRINGS = {
     'web.fallback_text': 'Die neue Oberfläche kann auf diesem PC nicht starten, deshalb öffnet sich die klassische.\n\nGrund: {reason}\n\nMeist fehlt die Microsoft-WebView2-Laufzeit. Download-Seite öffnen?',
     'web.fallback_info': 'Die neue Oberfläche kann auf diesem Computer nicht starten, deshalb öffnet sich die klassische.\n\nGrund: {reason}',
     'web.fallback_info_linux': 'Die neue Oberfläche kann auf diesem Computer nicht starten, deshalb öffnet sich die klassische.\n\nGrund: {reason}\n\nSie braucht eine GTK- oder Qt-Webansicht: die GTK-WebKit-Pakete installieren (z. B. python3-gi gir1.2-webkit2-4.1) oder pip install "pywebview[qt]" ausführen.',
-    'web.fallback_info_linux_app': 'Die neue Oberfläche kann auf diesem Computer nicht starten, deshalb öffnet sich die klassische.\n\nGrund: {reason}\n\nIhre Qt-Webansicht braucht einige Systembibliotheken, z. B. unter Ubuntu: sudo apt install libgl1 libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libwayland-server0 libpulse0',
+    'web.fallback_info_linux_app': 'Die neue Oberfläche kann auf diesem Computer nicht starten, deshalb öffnet sich die klassische.\n\nGrund: {reason}\n\nIhre Qt-Webansicht braucht einige Systembibliotheken, z. B. unter Ubuntu: sudo apt install libgl1 libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libwayland-server0 libpulse0 libgbm1',
     'settings.ui': 'Oberfläche',
     'settings.tab_about': 'Über',
     'web.set.lang_note': 'Die Sprache wird sofort übernommen.',

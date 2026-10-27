@@ -630,7 +630,7 @@ STRINGS = {
     'web.fallback_text': 'The new interface cannot start on this PC, so the classic one opens instead.\n\nReason: {reason}\n\nUsually the Microsoft WebView2 runtime is missing. Open the download page?',
     'web.fallback_info': 'The new interface cannot start on this computer, so the classic one opens instead.\n\nReason: {reason}',
     'web.fallback_info_linux': 'The new interface cannot start on this computer, so the classic one opens instead.\n\nReason: {reason}\n\nIt needs a GTK or Qt web view: install the GTK WebKit packages (e.g. python3-gi gir1.2-webkit2-4.1) or run pip install "pywebview[qt]".',
-    'web.fallback_info_linux_app': 'The new interface cannot start on this computer, so the classic one opens instead.\n\nReason: {reason}\n\nIts Qt web view needs a few system libraries, e.g. on Ubuntu: sudo apt install libgl1 libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libwayland-server0 libpulse0',
+    'web.fallback_info_linux_app': 'The new interface cannot start on this computer, so the classic one opens instead.\n\nReason: {reason}\n\nIts Qt web view needs a few system libraries, e.g. on Ubuntu: sudo apt install libgl1 libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libwayland-server0 libpulse0 libgbm1',
     'settings.ui': 'Interface',
     'settings.tab_about': 'About',
     'web.set.lang_note': 'The language is applied immediately.',

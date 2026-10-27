@@ -64,6 +64,11 @@ a = Analysis(
     excludes=["unittest", "pydoc", "test"],
     noarchive=False,
 )
+if sys.platform.startswith("linux"):
+    # The system's OpenGL (Mesa) drivers load into the app and need the system's C++ runtime and GBM: copies from
+    # the build system (Ubuntu 22.04) are too old for newer distributions ("Could not initialize GLX").
+    a.binaries = [b for b in a.binaries
+                  if not os.path.basename(b[0]).startswith(("libstdc++.so", "libgcc_s.so", "libgbm.so"))]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
