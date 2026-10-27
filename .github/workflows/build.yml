@@ -1,7 +1,7 @@
 name: Build
 
-# Push a tag like v1.0.0 to build the installer and publish a GitHub release.
-# Pushes to main, pull requests and "Run workflow" (manual) build the same files and
+# Push a tag like v1.0.0 to build the Windows installer, the macOS and Linux apps and publish a
+# GitHub release. Pushes to main, pull requests and "Run workflow" (manual) build the same files and
 # attach them as workflow artifacts only.
 on:
   push:
@@ -14,6 +14,28 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: python -m pip install pytest
+
+      - name: Tests
+        run: |
+          python -m pytest -q
+          python tools/check_bot.py
+          python tools/check_events.py
+
   windows:
     runs-on: windows-latest
     steps:
@@ -92,11 +114,136 @@ jobs:
             dist/installer/*.exe
             dist/*-portable.zip
 
-      - name: Publish release
+  macos:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = python -c "import screenstocks; print(screenstocks.__version__)"
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Version: $version"
+
+      - name: Set app version from tag
         if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          Set-Content -Path screenstocks/__init__.py -Encoding utf8 -Value @(
+            '"""ScreenStocks market data reader, history recorder and trading helper."""',
+            '',
+            "__version__ = `"$env:VERSION`""
+          )
+
+      # Pillow converts assets/icon.png to the .icns the app bundle needs.
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller==6.22.3 pillow -r requirements.txt
+
+      - name: Build app (PyInstaller)
+        run: pyinstaller --noconfirm ScreenStocksTradingBot.spec
+
+      - name: Smoke test
+        run: dist/ScreenStocksTradingBot.app/Contents/MacOS/ScreenStocksTradingBot --version
+
+      - name: Disk image
+        run: hdiutil create -volname "ScreenStocks Trading Bot" -srcfolder dist/ScreenStocksTradingBot.app -ov -format UDZO "dist/ScreenStocksTradingBot-$VERSION-macos-${{ matrix.arch }}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenStocksTradingBot-${{ env.VERSION }}-macos-${{ matrix.arch }}
+          path: dist/*.dmg
+
+  linux:
+    # the older glibc of 22.04 lets the build run on more distributions
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = python -c "import screenstocks; print(screenstocks.__version__)"
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Version: $version"
+
+      - name: Set app version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          Set-Content -Path screenstocks/__init__.py -Encoding utf8 -Value @(
+            '"""ScreenStocks market data reader, history recorder and trading helper."""',
+            '',
+            "__version__ = `"$env:VERSION`""
+          )
+
+      # PyInstaller loads Qt while analysing it, which needs these system libraries.
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libnss3 \
+            libxcomposite1 libxdamage1 libxrandr2 libxtst6 libasound2
+
+      # PySide6 (LGPL) rather than PyQt6 (GPL): the bundled Qt binding must not turn the app's licence into GPL
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller==6.22.3 "pywebview[pyside6]" -r requirements.txt
+
+      - name: Build app (PyInstaller)
+        run: pyinstaller --noconfirm ScreenStocksTradingBot.spec
+
+      - name: Smoke test
+        run: dist/ScreenStocksTradingBot/ScreenStocksTradingBot --version
+
+      # tar keeps the executable bit
+      - name: Archive
+        run: tar -C dist -czf "dist/ScreenStocksTradingBot-$VERSION-linux-x86_64.tar.gz" ScreenStocksTradingBot
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenStocksTradingBot-${{ env.VERSION }}-linux-x86_64
+          path: dist/*.tar.gz
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/installer/*.exe
             dist/*-portable.zip
+            dist/*.dmg
+            dist/*.tar.gz
+          fail_on_unmatched_files: true
           generate_release_notes: true

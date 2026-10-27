@@ -169,6 +169,11 @@ def _show_web_fallback(reason: str) -> None:
     from screenstocks.web import WEBVIEW2_DOWNLOAD, install_webview2
     root = tk.Tk()
     root.withdraw()
+    if sys.platform != "win32":  # WebView2 is Windows only; macOS / Linux just get the reason (and a hint)
+        key = "web.fallback_info" if sys.platform == "darwin" else "web.fallback_info_linux"
+        messagebox.showinfo(t("web.fallback_title"), t(key, reason=reason), parent=root)
+        root.destroy()
+        return
     if "WebView2" in reason and messagebox.askyesno(t("web.fallback_title"), t("web.webview2_ask"), parent=root):
         error = install_webview2()
         if not error:

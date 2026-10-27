@@ -1,5 +1,6 @@
 """Dark theme shared by the dashboard and the setup wizard."""
 
+import sys
 import tkinter as tk
 from tkinter import ttk
 
@@ -28,10 +29,14 @@ THEME = {
 
 
 def set_window_icon(win: tk.Misc) -> None:
-    icon = resource_path("assets/icon.ico")
+    icon = resource_path("assets/icon.ico" if sys.platform == "win32" else "assets/icon.png")
     if icon.exists():
         try:
-            win.iconbitmap(default=str(icon))
+            if sys.platform == "win32":
+                win.iconbitmap(default=str(icon))
+            else:  # .ico works only on Windows; keep the image referenced or Tk drops it
+                win._icon_image = tk.PhotoImage(master=win, file=str(icon))
+                win.iconphoto(True, win._icon_image)
         except tk.TclError:
             pass
 

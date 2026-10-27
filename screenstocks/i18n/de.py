@@ -628,6 +628,8 @@ STRINGS = {
     'web.auto.engine_hint': 'Regeln und Ereignis-Handel laufen nur, solange die App läuft und das Spiel live ist.',
     'web.fallback_title': 'Klassische Oberfläche',
     'web.fallback_text': 'Die neue Oberfläche kann auf diesem PC nicht starten, deshalb öffnet sich die klassische.\n\nGrund: {reason}\n\nMeist fehlt die Microsoft-WebView2-Laufzeit. Download-Seite öffnen?',
+    'web.fallback_info': 'Die neue Oberfläche kann auf diesem Computer nicht starten, deshalb öffnet sich die klassische.\n\nGrund: {reason}',
+    'web.fallback_info_linux': 'Die neue Oberfläche kann auf diesem Computer nicht starten, deshalb öffnet sich die klassische.\n\nGrund: {reason}\n\nSie braucht eine GTK- oder Qt-Webansicht: die GTK-WebKit-Pakete installieren (z. B. python3-gi gir1.2-webkit2-4.1) oder pip install "pywebview[qt]" ausführen.',
     'settings.ui': 'Oberfläche',
     'settings.tab_about': 'Über',
     'web.set.lang_note': 'Die Sprache wird sofort übernommen.',
@@ -649,7 +651,7 @@ STRINGS = {
     'about.col_name': 'Bibliothek',
     'about.col_version': 'Version',
     'about.col_license': 'Lizenz',
-    'about.runtime': 'Laufzeit: Python {python} (PSF-Lizenz) · Darstellung: Microsoft Edge WebView2',
+    'about.runtime': 'Laufzeit: Python {python} (PSF-Lizenz) · Darstellung: {engine}',
     'about.tradingview': 'Die Charts verwenden TradingView Lightweight Charts™ – © TradingView, Inc., lizenziert unter Apache-2.0. Das TradingView-Logo ist in den Charts ausgeblendet; dieser Hinweis mit Link ersetzt es.',
     'about.tradingview_link': 'tradingview.com öffnen',
 

@@ -627,7 +627,7 @@ def apply_learning(calib: dict, live: dict) -> dict:
 def calibrate_db(path, s: BotSettings, buy_cd_s: float = 85, short_cd_s: float = 85) -> dict[str, Calib]:
     """calibrate() on the last CALIB_WINDOW_S of recorded prices, on its own connection, with the measured order delay
     and corrected by the real trades (self-learning). Top-level with picklable arguments and result: BotTrader runs
-    it in a child process (spawn on Windows)."""
+    it in a spawned child process."""
     db = Storage(path)
     try:
         end = db.latest_time_ms() or 0
@@ -1051,7 +1051,9 @@ class BotTrader:
             # a few seconds of pure Python: in a child process it does not hold the GIL of the collector, the
             # automation and the UI. A fresh process per calibration (~0.5 s start every recalib_min minutes) leaves
             # nothing idle in between and nothing to repair when one dies (BrokenProcessPool is just a failed calibration).
-            with ProcessPoolExecutor(max_workers=1, initializer=_exit_with_parent) as pool:
+            # spawn everywhere (the default on Windows / macOS): fork from this threaded process can deadlock on Linux
+            with ProcessPoolExecutor(max_workers=1, initializer=_exit_with_parent,
+                                     mp_context=multiprocessing.get_context("spawn")) as pool:
                 self.calib = pool.submit(calibrate_db, path, s, *cds).result()
             log.info("bot calibrated (tau, z, stop, exit, confirm, score, n, trust): %s",
                      {k: (c.params.tau_s, c.params.entry_z, c.params.stop_pct, c.params.exit_z, c.params.confirm_s,

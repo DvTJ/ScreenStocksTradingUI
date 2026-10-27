@@ -1,6 +1,7 @@
 """Starts the web UI window."""
 
 import logging
+import sys
 from pathlib import Path
 from typing import Callable
 
@@ -38,6 +39,6 @@ def run(start_backend: Callable[[], tuple[Collector, AutomationEngine, Path, Pat
         width=1500, height=930, min_size=(900, 600), background_color="#0f1012", text_select=False)
     bridge._attach(window)
     window.events.closed += bridge._shutdown
-    icon = resource_path("assets/icon.ico")
+    icon = resource_path("assets/icon.ico" if sys.platform == "win32" else "assets/icon.png")  # GTK / Qt want a png
     webview.start(debug=debug, icon=str(icon) if icon.exists() else None)
     bridge._shutdown()

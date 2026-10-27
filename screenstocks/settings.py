@@ -2,6 +2,9 @@
 
 settings.json lives in %APPDATA%\\ScreenStocksTradingBot, the database and log
 in %LOCALAPPDATA%\\ScreenStocksTradingBot - the install folder may be read-only.
+macOS keeps both in ~/Library/Application Support/ScreenStocksTradingBot, Linux in
+$XDG_CONFIG_HOME (~/.config) and $XDG_DATA_HOME (~/.local/share)/ScreenStocksTradingBot;
+an existing ~/ScreenStocksTradingBot (older source runs) stays in use there.
 """
 
 import json
@@ -28,12 +31,26 @@ def resource_path(relative: str) -> Path:
     return base / relative
 
 
+def _unix_dir(xdg_var: str, xdg_default: str) -> Path:
+    home = Path.home()
+    legacy = home / APP_NAME
+    if legacy.exists():
+        return legacy
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / APP_NAME
+    return Path(os.environ.get(xdg_var) or home / xdg_default) / APP_NAME
+
+
 def user_config_dir() -> Path:
-    return Path(os.environ.get("APPDATA", Path.home())) / APP_NAME
+    if sys.platform == "win32":
+        return Path(os.environ.get("APPDATA", Path.home())) / APP_NAME
+    return _unix_dir("XDG_CONFIG_HOME", ".config")
 
 
 def user_data_dir() -> Path:
-    return Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home())) / APP_NAME
+    return _unix_dir("XDG_DATA_HOME", ".local/share")
 
 
 SETTINGS_FILE = user_config_dir() / "settings.json"
@@ -62,10 +79,10 @@ def normalize_export_dir(path: Path) -> Path:
 
 def detect_export_dir() -> Optional[Path]:
     candidates = [config.DEFAULT_EXPORT_DIR]
-    locallow = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "AppData" / "LocalLow"
-    if locallow.is_dir():
-        # also catch renamed studio/game folders, e.g. a demo build
-        candidates += sorted(locallow.glob("*/Screen Stocks*/mods/export"))
+    for root in config.game_data_roots():
+        if root.is_dir():
+            # also catch renamed studio/game folders, e.g. a demo build
+            candidates += sorted(root.glob("*/Screen Stocks*/mods/export"))
     for c in candidates:
         if c.is_dir():
             return c

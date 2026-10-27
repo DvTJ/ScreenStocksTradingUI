@@ -125,13 +125,13 @@
   }
 
   // ---------------------------------------------------------------- keyboard
-  // 1-8 = tabs, Ctrl+, = settings; everything else goes to the active tab (e.g. arrows in the market).
+  // 1-8 = tabs, Ctrl+, (Cmd+, on macOS) = settings; everything else goes to the active tab (e.g. arrows in the market).
   // Off while typing or while a dialog is open (Esc closes dialogs, handled by the dialogs themselves).
   function onKey(e) {
     const el = e.target;
     if (el && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName))) return;
     if (!$("modal").classList.contains("hidden") || document.querySelector(".sheet-backdrop")) return;
-    if (e.ctrlKey && !e.altKey && e.key === ",") { e.preventDefault(); SS.openSettings(); return; }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === ",") { e.preventDefault(); SS.openSettings(); return; }
     if (e.ctrlKey || e.altKey || e.metaKey) return;
     const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);      // physical key: works on every layout
     if (digit && !e.shiftKey && Number(digit[1]) <= TAB_ORDER.length) {

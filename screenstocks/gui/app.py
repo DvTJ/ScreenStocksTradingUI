@@ -1,6 +1,7 @@
 """tkinter dashboard on top of the recorded history."""
 
 import math
+import sys
 import time
 import tkinter as tk
 from dataclasses import dataclass, field
@@ -136,6 +137,9 @@ class TradePanel(ttk.Frame):
         spin.pack(side="left", padx=(6, 2))
         spin.bind("<KeyRelease>", lambda e: self._on_pct_changed())
         spin.bind("<MouseWheel>", self._on_wheel)
+        if spin.tk.call("tk", "windowingsystem") == "x11":  # X11 Tk sends the wheel as buttons 4 / 5
+            spin.bind("<Button-4>", self._on_wheel)
+            spin.bind("<Button-5>", self._on_wheel)
         ttk.Label(prow, text="%", style="CardValue.TLabel").pack(side="left")
         for v in (100, 75, 50, 25, 10):
             tk.Button(prow, text=str(v), width=3, command=lambda v=v: self._set_pct(v), relief="flat",
@@ -205,7 +209,8 @@ class TradePanel(ttk.Frame):
 
     def _on_wheel(self, e) -> None:
         p = self._percent() or 25
-        self._set_pct(normalize_percent(p + (1 if e.delta > 0 else -1)))
+        up = e.delta > 0 if e.delta else e.num == 4
+        self._set_pct(normalize_percent(p + (1 if up else -1)))
 
     # ---------------------------------------------------------------- refresh
 
@@ -1469,7 +1474,8 @@ class App(tk.Tk):
                   bg=THEME["panel_alt"], fg=THEME["fg"], **bar_btn).pack(side="right", padx=(6, 0))
         self.install_btn = tk.Button(self.update_bar, text=t("update.install"), command=self._install_update,
                                      bg=THEME["accent"], fg="#0d1117", **bar_btn)
-        if settings_mod.is_frozen():  # from source an installer would set up a separate copy
+        # from source an installer would set up a separate copy; macOS / Linux have no installer (release page only)
+        if settings_mod.is_frozen() and sys.platform == "win32":
             self.install_btn.pack(side="right", padx=(6, 0))
         tk.Button(self.update_bar, text=t("update.open_page"), bg=THEME["panel_alt"], fg=THEME["fg"],
                   command=lambda: self._release and webbrowser.open(self._release.page_url),

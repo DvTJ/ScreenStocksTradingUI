@@ -649,6 +649,8 @@ STRINGS = {
     'web.auto.engine_hint': "Les règles et le trading sur événements ne fonctionnent que tant que l'application est ouverte et que le jeu est en direct.",
     'web.fallback_title': 'Interface classique',
     'web.fallback_text': "La nouvelle interface ne peut pas démarrer sur ce PC, l'interface classique s'ouvre donc à la place.\n\nRaison : {reason}\n\nIl manque généralement le runtime Microsoft WebView2. Ouvrir la page de téléchargement ?",
+    'web.fallback_info': "La nouvelle interface ne peut pas démarrer sur cet ordinateur, l'interface classique s'ouvre donc à la place.\n\nRaison : {reason}",
+    'web.fallback_info_linux': "La nouvelle interface ne peut pas démarrer sur cet ordinateur, l'interface classique s'ouvre donc à la place.\n\nRaison : {reason}\n\nElle a besoin d'une vue web GTK ou Qt : installez les paquets GTK WebKit (par ex. python3-gi gir1.2-webkit2-4.1) ou lancez pip install \"pywebview[qt]\".",
     'settings.ui': 'Interface',
     'settings.tab_about': 'À propos',
     'web.set.lang_note': 'La langue est appliquée immédiatement.',
@@ -670,7 +672,7 @@ STRINGS = {
     'about.col_name': 'Bibliothèque',
     'about.col_version': 'Version',
     'about.col_license': 'Licence',
-    'about.runtime': 'Exécution : Python {python} (licence PSF) · Affichage : Microsoft Edge WebView2',
+    'about.runtime': 'Exécution : Python {python} (licence PSF) · Affichage : {engine}',
     'about.tradingview': 'Les graphiques utilisent TradingView Lightweight Charts™ – © TradingView, Inc., sous licence Apache-2.0. Le logo TradingView est masqué dans les graphiques ; cet avis et ce lien le remplacent.',
     'about.tradingview_link': 'Ouvrir tradingview.com',
 

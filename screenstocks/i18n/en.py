@@ -628,6 +628,8 @@ STRINGS = {
     'web.auto.engine_hint': 'Rules and event trading only run while the app is running and the game is live.',
     'web.fallback_title': 'Classic interface',
     'web.fallback_text': 'The new interface cannot start on this PC, so the classic one opens instead.\n\nReason: {reason}\n\nUsually the Microsoft WebView2 runtime is missing. Open the download page?',
+    'web.fallback_info': 'The new interface cannot start on this computer, so the classic one opens instead.\n\nReason: {reason}',
+    'web.fallback_info_linux': 'The new interface cannot start on this computer, so the classic one opens instead.\n\nReason: {reason}\n\nIt needs a GTK or Qt web view: install the GTK WebKit packages (e.g. python3-gi gir1.2-webkit2-4.1) or run pip install "pywebview[qt]".',
     'settings.ui': 'Interface',
     'settings.tab_about': 'About',
     'web.set.lang_note': 'The language is applied immediately.',
@@ -649,7 +651,7 @@ STRINGS = {
     'about.col_name': 'Library',
     'about.col_version': 'Version',
     'about.col_license': 'Licence',
-    'about.runtime': 'Runtime: Python {python} (PSF licence) · Rendering: Microsoft Edge WebView2',
+    'about.runtime': 'Runtime: Python {python} (PSF licence) · Rendering: {engine}',
     'about.tradingview': 'The charts use TradingView Lightweight Charts™ – © TradingView, Inc., licensed under Apache-2.0. The TradingView logo is hidden in the charts; this notice and link replace it.',
     'about.tradingview_link': 'Open tradingview.com',
 

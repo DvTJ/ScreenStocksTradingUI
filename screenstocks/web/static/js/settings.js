@@ -200,7 +200,7 @@
         <table class="tbl"><thead><tr><th>${esc(t("about.col_name"))}</th><th>${esc(t("about.col_version"))}</th><th>${esc(t("about.col_license"))}</th></tr></thead>
         <tbody>${a.libraries.map((l) => `<tr><td><span class="link" data-url="${esc(l.url)}">${esc(l.name)}</span></td>
           <td class="mono">${esc(l.version || "–")}</td><td>${esc(l.license)}</td></tr>`).join("")}</tbody></table>
-        <div class="form-note" style="margin-top:8px">${esc(t("about.runtime", { python: a.python }))}</div>
+        <div class="form-note" style="margin-top:8px">${esc(t("about.runtime", { python: a.python, engine: a.engine }))}</div>
       </div>
       <div class="notice">${esc(t("about.tradingview"))}<br>
         <span class="link" data-url="https://www.tradingview.com/">${esc(t("about.tradingview_link"))}</span></div>`;

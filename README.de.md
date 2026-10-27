@@ -11,6 +11,8 @@ führt automatische Regeln wie Stop-Loss und Take-Profit aus.
 Seit 2.0 hat die App eine neue Oberfläche (dunkles Design, TradingView-Charts). Die bisherige Oberfläche bleibt
 erhalten: umschalten unter **⚙ Einstellungen → Allgemein → Oberfläche**. Fehlt die Microsoft-Edge-WebView2-Laufzeit
 (bei Windows 10/11 dabei), startet automatisch die klassische Oberfläche und bietet den Download an.
+Unter macOS nutzt die neue Oberfläche das eingebaute WebKit. Unter Linux nutzt sie Qt WebEngine (im Linux-Download
+enthalten) oder GTK WebKit; funktioniert keins von beiden, startet die klassische Oberfläche.
 
 ## Funktionen
 
@@ -55,9 +57,11 @@ erhalten: umschalten unter **⚙ Einstellungen → Allgemein → Oberfläche**. 
 - **Einstellungen** (⚙) – Sprache (sofort wirksam), Oberfläche, Ordner, Datenbank; feste Farbe je Aktie
   (Palette oder freie Farbe); Datenpflege; Update-Prüfung; „Über“ mit den verwendeten Bibliotheken und Lizenzen.
 - **Tastatur** – **1–8** wechseln die Tabs, **Strg+,** öffnet die Einstellungen, **Esc** schließt Dialoge; im
-  Markt-Tab wählen **↑ / ↓** die vorherige / nächste Aktie, **R** setzt den Chart-Zoom zurück.
+  Markt-Tab wählen **↑ / ↓** die vorherige / nächste Aktie, **R** setzt den Chart-Zoom zurück. Unter macOS
+  öffnet auch **Cmd+,** die Einstellungen.
 - **Update-Prüfung** – bei jedem Start (abschaltbar); Hinweis mit Link zum Release, in der installierten App
-  auf Wunsch Download und Start des neuen Installers.
+  auf Wunsch Download und Start des neuen Installers. Unter macOS und Linux gibt es keinen Installer: der
+  Hinweis verlinkt die Release-Seite.
 - **Verdichten** – Kurse und Portfolio-Snapshots älter als 7 Tage werden beim Start auf einen Wert pro
   10 Sekunden reduziert; Trades, News, Dividenden und Regeln bleiben immer vollständig.
 - Oberfläche auf Deutsch, Englisch und Französisch, Einrichtungsassistent beim ersten Start.
@@ -68,6 +72,31 @@ Die neueste `ScreenStocksTradingBot-Setup-x.y.z.exe` unter [Releases](../../rele
 und ausführen. Es sind keine Administratorrechte nötig (Installation pro Benutzer).
 Zu jedem Release gibt es zusätzlich eine portable ZIP-Datei.
 
+**macOS** – `ScreenStocksTradingBot-x.y.z-macos-arm64.dmg` (Apple Silicon) oder
+`ScreenStocksTradingBot-x.y.z-macos-x86_64.dmg` (Intel) herunterladen, öffnen und `ScreenStocksTradingBot.app` in
+den Ordner „Programme“ kopieren. Die App ist nicht von Apple signiert, deshalb blockiert macOS den ersten Start.
+Entweder die App mit Rechtsklick (Ctrl-Klick) → **Öffnen** → **Öffnen** starten, oder sie einmal zu starten
+versuchen und dann unter **Systemeinstellungen → Datenschutz & Sicherheit** auf **Dennoch öffnen** klicken. Ab
+macOS 15 funktioniert nur noch der zweite Weg.
+
+**Linux** – das Spiel hat keine Linux-Version; es läuft über Steam Proton, und die App findet den Spiel-Ordner im
+Proton-Prefix. `ScreenStocksTradingBot-x.y.z-linux-x86_64.tar.gz` herunterladen, entpacken und die App starten:
+
+```
+tar -xzf ScreenStocksTradingBot-x.y.z-linux-x86_64.tar.gz
+./ScreenStocksTradingBot/ScreenStocksTradingBot
+```
+
+Der Build entsteht auf Ubuntu 22.04 (benötigt glibc 2.35 oder neuer) und enthält Qt, nutzt aber die üblichen
+X11-/Qt-Systembibliotheken. Startet die App nicht, diese installieren, unter Debian/Ubuntu zum Beispiel
+`sudo apt install libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3`.
+
+Unter macOS und Linux gibt es keinen Installer: für ein Update die neue Datei unter [Releases](../../releases)
+herunterladen und die alte App ersetzen. Einstellungen und Historie bleiben, wo sie sind.
+
+Den Mod-Support im Spiel schaltet `"modSupport" : true` in der Datei `thesmallshort_online_settings.sav` im
+Spiel-Ordner ein (siehe [Wo die Dateien liegen](#wo-die-dateien-liegen)); erst dann schreibt das Spiel `market.json`.
+
 Beim ersten Start fragt ein kurzer Assistent:
 
 1. **Sprache** – Deutsch / English / Français
@@ -77,9 +106,40 @@ Beim ersten Start fragt ein kurzer Assistent:
    `mod-settings.json` des Spiels einschalten.
 3. **Datenbank** – Speicherort der Historie (Standard `%LOCALAPPDATA%\ScreenStocksTradingBot\screenstocks.db`)
 
+Die Standardpfade unter macOS und Linux stehen unter [Wo die Dateien liegen](#wo-die-dateien-liegen).
+
 Alles lässt sich später unter **⚙ Einstellungen** ändern; den Assistenten selbst öffnet der Startmenü-Eintrag
 „ScreenStocks Trading Bot – Setup“ (oder `--setup`) erneut. Die Einstellungen liegen in `%APPDATA%\ScreenStocksTradingBot\settings.json`;
 bei der Deinstallation bleiben Einstellungen und Historie erhalten.
+Unter macOS und Linux gibt es keinen Startmenü-Eintrag; dort `--setup` verwenden.
+
+### Wo die Dateien liegen
+
+**Windows**
+
+- Einstellungen: `%APPDATA%\ScreenStocksTradingBot\settings.json`
+- Datenbank und Log: `%LOCALAPPDATA%\ScreenStocksTradingBot\` (`screenstocks.db`, `app.log`)
+- Spiel-Ordner: `%USERPROFILE%\AppData\LocalLow\Conradical Games\Screen Stocks\` – der Export liegt in
+  `mods\export`, die Spiel-Einstellungen in `thesmallshort_online_settings.sav`
+
+**macOS**
+
+- Einstellungen, Datenbank und Log: `~/Library/Application Support/ScreenStocksTradingBot/`
+- Spiel-Ordner: `~/Library/Application Support/Conradical Games/Screen Stocks/` (gleicher Inhalt wie unter Windows)
+
+**Linux**
+
+- Einstellungen: `~/.config/ScreenStocksTradingBot/settings.json` (oder `$XDG_CONFIG_HOME`)
+- Datenbank und Log: `~/.local/share/ScreenStocksTradingBot/` (oder `$XDG_DATA_HOME`)
+- Spiel-Ordner (Proton):
+  `<Steam-Bibliothek>/steamapps/compatdata/4356780/pfx/drive_c/users/steamuser/AppData/LocalLow/Conradical Games/Screen Stocks/`
+  (die Demo nutzt `5124200` statt `4356780`; gleicher Inhalt wie unter Windows). Die App sucht im Standard-Steam-Ordner
+  (`~/.local/share/Steam`, Flatpak `~/.var/app/com.valvesoftware.Steam/.local/share/Steam`,
+  Snap `~/snap/steam/common/.local/share/Steam`) und in jeder Bibliothek aus Steams `libraryfolders.vdf`.
+
+Wer die App unter macOS oder Linux schon aus dem Quellcode gestartet hat und den Ordner `~/ScreenStocksTradingBot`
+besitzt, behält ihn für Einstellungen, Datenbank und Log. Wird der Spiel-Ordner nicht gefunden, den `export`-Ordner
+im Einrichtungsassistenten von Hand wählen.
 
 > **Hinweis:** Handelsbefehle und Automatik-Regeln wirken über die Befehlsdateien des Mods im Spiel.
 > Regeln lösen nur aus, solange die App läuft und das Spiel live ist. Ein Ausführungskurs genau am
@@ -99,6 +159,15 @@ python main.py --headless   # Aufzeichnung + Automatik ohne Fenster
 python main.py --lang de    # Sprache für einen Start überschreiben
 ```
 
+Unter macOS und Linux `python3 main.py` verwenden (oder `./start.sh`, das dieselben Optionen annimmt).
+
+- **macOS** – Python von python.org enthält tkinter (Homebrew-Python braucht `brew install python-tk`);
+  `pip install -r requirements.txt` installiert pywebview mit allem, was es für WebKit braucht.
+- **Linux** – tkinter ist ein eigenes Paket (`sudo apt install python3-tk`). Die neue Oberfläche braucht ein
+  pywebview-Backend: entweder GTK WebKit (`sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1`,
+  für das System-Python oder eine mit `--system-site-packages` angelegte virtuelle Umgebung) oder Qt
+  (`pip install "pywebview[qt]"`). Ohne Backend startet die klassische Oberfläche.
+
 ## Build
 
 ```
@@ -107,12 +176,18 @@ pyinstaller --noconfirm ScreenStocksTradingBot.spec            # -> dist/ScreenS
 iscc /DMyAppVersion=1.0.0 installer\ScreenStocksTradingBot.iss  # -> dist/installer/ (benötigt Inno Setup 6)
 ```
 
+Unter macOS baut derselbe `pyinstaller`-Befehl `dist/ScreenStocksTradingBot.app`, unter Linux
+`dist/ScreenStocksTradingBot/` (vorher `pip install "pywebview[pyside6]"`, damit Qt enthalten ist). Den Installer gibt
+es nur für Windows.
+
 ### Releases über GitHub Actions
 
 `.github/workflows/build.yml` baut App, Installer und portable ZIP auf `windows-latest`.
+Außerdem baut er die macOS-`.dmg`-Dateien (arm64 auf `macos-15`, x86_64 auf `macos-15-intel`) und das Linux-`.tar.gz`
+(auf `ubuntu-22.04`) und führt die Tests unter Windows, macOS und Linux aus.
 
 - Tag `vX.Y.Z` pushen → ein GitHub-Release mit Installer und ZIP wird automatisch erstellt
-  (die Version kommt aus dem Tag).
+  (die Version kommt aus dem Tag). Das Release enthält auch die macOS- und Linux-Dateien.
 - „Run workflow“ im Actions-Tab → gleicher Build, Dateien als Workflow-Artefakte.
 
 ```
@@ -128,6 +203,10 @@ git push origin v1.0.0
 | [pythonnet](https://github.com/pythonnet/pythonnet) | MIT | von pywebview genutzt, um WebView2 anzusprechen |
 | [TradingView Lightweight Charts™](https://github.com/tradingview/lightweight-charts) | Apache-2.0 | Charts (liegt in `screenstocks/web/static/vendor/`) |
 | Microsoft Edge WebView2 | Microsoft | stellt die Oberfläche dar (Teil von Windows) |
+| [PyObjC](https://github.com/ronaldoussoren/pyobjc) | MIT | von pywebview unter macOS genutzt, um WebKit anzusprechen |
+| WebKit (WKWebView) | Apple | stellt die Oberfläche unter macOS dar (Teil von macOS) |
+| [PySide6](https://doc.qt.io/qtforpython-6/) | LGPL-3.0 | von pywebview im Linux-Build genutzt |
+| [Qt](https://www.qt.io/) inkl. Qt WebEngine | LGPL-3.0 | stellt die Oberfläche im Linux-Build dar |
 
 Die Charts verwenden TradingView Lightweight Charts™, © TradingView, Inc. Das TradingView-Logo ist in den Charts
 ausgeblendet; stattdessen stehen der Hinweis und ein Link zu [tradingview.com](https://www.tradingview.com/) unter

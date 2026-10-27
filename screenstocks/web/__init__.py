@@ -1,14 +1,15 @@
-"""Web user interface (pywebview + Edge WebView2).
+"""Web user interface (pywebview: Edge WebView2 on Windows, WebKit on macOS, GTK or Qt on Linux).
 
 The classic Tkinter interface (screenstocks.gui) stays available: it can be
-chosen in the settings and starts automatically when WebView2 is missing.
+chosen in the settings and starts automatically when the web view is missing.
 """
 
+import importlib.util
 import os
 import subprocess
+import sys
 import tempfile
 import urllib.request
-import winreg
 from pathlib import Path
 
 WEBVIEW2_CLIENT = r"Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
@@ -19,6 +20,7 @@ WEBVIEW2_BOOTSTRAPPER = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 
 def webview2_version() -> str:
     """Installed Edge WebView2 runtime version, or "" if it is missing."""
+    import winreg
     for hive, key in ((winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node" + WEBVIEW2_CLIENT[8:]),
                       (winreg.HKEY_LOCAL_MACHINE, "SOFTWARE" + WEBVIEW2_CLIENT[8:]),
                       (winreg.HKEY_CURRENT_USER, WEBVIEW2_CLIENT)):
@@ -50,12 +52,15 @@ def install_webview2() -> str:
 
 
 def webview_available() -> tuple[bool, str]:
-    """(usable, reason) - the web UI needs pywebview and the WebView2 runtime."""
+    """(usable, reason) - the web UI needs pywebview and, on Windows, the WebView2 runtime,
+    on Linux a GTK (gi) or Qt (qtpy) backend. Cheap checks only, no window is started."""
     try:
-        import importlib
         importlib.import_module("webview")
     except Exception as exc:  # missing package or .NET bridge failure
         return False, f"pywebview: {exc}"
-    if not webview2_version():
-        return False, "WebView2 runtime not installed"
+    if sys.platform == "win32":
+        if not webview2_version():
+            return False, "WebView2 runtime not installed"
+    elif sys.platform != "darwin" and not any(importlib.util.find_spec(m) for m in ("gi", "qtpy")):
+        return False, "no pywebview backend (GTK WebKit or Qt) installed"
     return True, ""

@@ -1,0 +1,95 @@
+import importlib
+import importlib.util
+import subprocess
+import sys
+import types
+
+import pytest
+
+from screenstocks import i18n, updater
+
+RELEASE = {
+    "tag_name": "v1.4.0",
+    "html_url": "https://github.com/x/y/releases/tag/v1.4.0",
+    "assets": [
+        {"name": "ScreenStocksTradingBot-1.4.0-portable.zip", "browser_download_url": "https://dl/zip", "size": 5},
+        {"name": "ScreenStocksTradingBot-Setup-1.4.0.exe", "browser_download_url": "https://dl/exe", "size": 7},
+        {"name": "ScreenStocksTradingBot-1.4.0-macos-arm64.dmg", "browser_download_url": "https://dl/dmg", "size": 9},
+    ],
+}
+
+
+@pytest.fixture
+def web(monkeypatch):
+    """screenstocks.web imported freshly as on macOS / Linux: no winreg module."""
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setitem(sys.modules, "winreg", None)       # import winreg -> ImportError
+    monkeypatch.delitem(sys.modules, "screenstocks.web", raising=False)
+    monkeypatch.setitem(sys.modules, "webview", types.ModuleType("webview"))  # importable, never started
+    return importlib.import_module("screenstocks.web")
+
+
+def _backends(monkeypatch, *present):
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name, *a: (object() if name in present else None) if name in ("gi", "qtpy")
+                        else real(name, *a))
+
+
+def test_web_imports_without_winreg(web):
+    assert web.WEBVIEW2_DOWNLOAD.startswith("https://")
+
+
+def test_webview_linux_needs_backend(web, monkeypatch):
+    _backends(monkeypatch)
+    ok, reason = web.webview_available()
+    assert not ok and "backend" in reason
+    _backends(monkeypatch, "qtpy")
+    assert web.webview_available() == (True, "")
+
+
+def test_webview_macos_needs_only_pywebview(web, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    _backends(monkeypatch)
+    assert web.webview_available() == (True, "")
+
+
+def test_webview_windows_needs_webview2(web, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(web, "webview2_version", lambda: "")
+    assert web.webview_available() == (False, "WebView2 runtime not installed")
+    monkeypatch.setattr(web, "webview2_version", lambda: "130.0.2849.80")
+    assert web.webview_available() == (True, "")
+
+
+def test_installer_only_on_windows(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    r = updater.parse_release(RELEASE)
+    assert (r.version, r.installer_name, r.installer_url, r.installer_size) == \
+        ("1.4.0", "ScreenStocksTradingBot-Setup-1.4.0.exe", "https://dl/exe", 7)
+    for plat in ("darwin", "linux"):
+        monkeypatch.setattr(sys, "platform", plat)
+        r = updater.parse_release(RELEASE)
+        assert (r.version, r.page_url) == ("1.4.0", RELEASE["html_url"])
+        assert (r.installer_name, r.installer_url, r.installer_size) == (None, None, 0)
+
+
+@pytest.fixture
+def mac(monkeypatch):
+    monkeypatch.setattr(i18n, "ctypes", types.SimpleNamespace())  # no windll
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.delenv("LANG", raising=False)
+    monkeypatch.setattr(i18n.locale, "getlocale", lambda *a: (None, None))
+
+
+def test_macos_language_from_apple_languages(mac, monkeypatch):
+    out = '(\n    "fr-FR",\n    "en-US"\n)\n'
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout=out))
+    assert i18n.system_language() == "fr"
+
+
+def test_macos_language_fallback(mac, monkeypatch):
+    def fail(*a, **k):
+        raise subprocess.TimeoutExpired("defaults", 2)
+    monkeypatch.setattr(subprocess, "run", fail)
+    assert i18n.system_language() == "en"
