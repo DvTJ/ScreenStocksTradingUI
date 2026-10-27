@@ -6,6 +6,7 @@ chosen in the settings and starts automatically when WebView2 is missing.
 
 import os
 import subprocess
+import sys
 import tempfile
 import urllib.request
 import winreg
@@ -49,8 +50,27 @@ def install_webview2() -> str:
     return "" if webview2_version() else "installer finished but WebView2 is still not detected"
 
 
+def unblock_bundled_dlls() -> None:
+    """Remove the "downloaded from the internet" mark from the bundled .NET DLLs.
+
+    Unpacking the portable zip with Explorer copies the mark onto every file, and .NET then
+    refuses to load them ("Failed to resolve Python.Runtime.Loader.Initialize")."""
+    base = getattr(sys, "_MEIPASS", None)
+    if not base:
+        return
+    for sub in ("pythonnet", "clr_loader", "webview"):
+        folder = Path(base) / sub
+        if folder.is_dir():
+            for dll in folder.rglob("*.dll"):
+                try:
+                    os.remove(f"{dll}:Zone.Identifier")
+                except OSError:
+                    pass                         # not marked, or no write access
+
+
 def webview_available() -> tuple[bool, str]:
     """(usable, reason) - the web UI needs pywebview and the WebView2 runtime."""
+    unblock_bundled_dlls()
     try:
         import importlib
         importlib.import_module("webview")
