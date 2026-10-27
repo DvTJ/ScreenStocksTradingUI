@@ -23,7 +23,9 @@ missing (it ships with Windows 10/11), the app starts the classic interface auto
   limit short, trailing buy / trailing short (follow the low / high and enter when the price turns by X %, optionally
   only once the price has reached an activation level). Optional "confirm after N seconds" against short spikes. By default a rule fires once and
   disables itself; with **↻ Repeat** it stays active and fires again each time the price leaves the
-  trigger zone and reaches it again. Cooldown / rate-limit rejections are retried automatically.
+  trigger zone and reaches it again. A repeating rule can run in rounds: **Runs per round** N and
+  **Pause (min)** Z make it pause Z minutes after every N runs (without a pause it switches itself off after N runs).
+  Cooldown / rate-limit rejections are retried automatically.
 - **Announced events** – the game announces pumps (~1 min ahead) and crashes (hours ahead). With the switches
   in the Automation tab (off by default) the app buys after a pump announcement, sells close to the announced
   target (or on the pullback from the peak), shorts and covers near the starting price; before a crash it sells

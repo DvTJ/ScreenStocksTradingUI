@@ -1164,7 +1164,8 @@ class BotTrader:
         event_soon = {} if s.paper else self.event_guard(db, server_ms, snap)
         from .automation import ENTRY_ACTION          # automation imports this module; import late to avoid a cycle
         armed = set() if s.paper else {ENTRY_ACTION[r["kind"]] for r in db.rules(True)
-                                       if r["kind"] in ENTRY_ACTION and rule_near(r, prices.get(r["stock_id"]))}
+                                       if r["kind"] in ENTRY_ACTION and rule_near(r, prices.get(r["stock_id"]))
+                                       and not (r["repeat"] and (r["pause_until_ms"] or 0) > now_s * 1000)}
         cd_left = {"buy": ((snap.get("next_buy_ms") or 0) - server_ms) / 1000, "short": ((snap.get("next_short_ms") or 0) - server_ms) / 1000}
         if s.paper:
             cd_left = {k: self._paper_next[k] - now_s for k in cd_left}

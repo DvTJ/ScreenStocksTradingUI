@@ -1,5 +1,6 @@
 """tkinter dashboard on top of the recorded history."""
 
+import math
 import time
 import tkinter as tk
 from dataclasses import dataclass, field
@@ -1080,6 +1081,8 @@ class AutomationTab(ttk.Frame):
             times = float(self.times_var.get().strip().replace(",", ".") or 0)
             wait = float(self.wait_var.get().strip().replace(",", ".") or 0) * 60
         except ValueError:
+            return None
+        if not (math.isfinite(times) and math.isfinite(wait)):
             return None
         mode = "price" if kind in ("buy_limit", "short_limit") else \
             "pct" if kind in ("trailing_stop", *TRAILING_ENTRY) else self._key(MODE_KEYS, mode_name, self.mode_var.get())

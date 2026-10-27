@@ -390,7 +390,7 @@ class AutomationEngine(threading.Thread):
                     # a low / high from before the restart is stale: follow the price afresh
                     rule["extreme"] = None
                     db.update_rule(rid, extreme=None)
-            pause = rule.get("pause_until_ms")
+            pause = rule.get("pause_until_ms") if rule["repeat"] else None
             if pause and pause > now * 1000:
                 # a round of a repeat rule is done; afterwards it re-arms like after any other run
                 self._since.pop(rid, None)

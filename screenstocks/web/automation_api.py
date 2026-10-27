@@ -4,6 +4,7 @@ Mixed into Bridge (bridge.py). Validation, storage and logging follow the classi
 AutomationTab exactly; the engine itself (automation.py / events.py) is unchanged.
 """
 
+import math
 import time
 from dataclasses import asdict, fields
 from typing import Optional
@@ -47,7 +48,7 @@ class AutomationApi:
             wait = _num(form.get("repeat_wait_min") or 0) * 60
         except (TypeError, ValueError):
             return None, t("auto.invalid_form")
-        if times < 0 or times != int(times) or wait < 0:
+        if not (math.isfinite(times) and math.isfinite(wait)) or times < 0 or times != int(times) or wait < 0:
             return None, t("auto.invalid_repeat")
         kind = form.get("kind") if form.get("kind") in KIND_KEYS else None
         side = form.get("side") if form.get("side") in SIDE_KEYS else "long"

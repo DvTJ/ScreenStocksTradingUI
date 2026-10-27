@@ -229,6 +229,10 @@ def check_repeat_rounds():
     db.update_rule(rid, pause_until_ms=int(time.time() * 1000) - 1)
     step()
     assert len(game.sent) == sent + 1, "the next round starts after the pause"
+    step()                                           # done: run 3, mid-round
+    db.update_rule(rid, repeat=0, pause_until_ms=int(time.time() * 1000) + 600_000)
+    step()
+    assert len(game.sent) == sent + 2, "without repeat an old pause does not hold the rule"
     print(f"repeat rounds: {status_display(rule(rid)['status'])!r}, {len(game.sent)} sells")
 
 
