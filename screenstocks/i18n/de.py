@@ -257,7 +257,7 @@ STRINGS = {
     'setup.game.dir_missing': '✖ Ordner existiert nicht',
     'setup.game.market_ok': '✔ market.json gefunden',
     'setup.game.market_missing': '⚠ market.json fehlt noch – aktiviere die Mod-Unterstützung im Spiel und starte es einmal.',
-    'setup.game.modsupport_on': '✔ Mod-Unterstützung ist in den Spieleinstellungen aktiviert.',
+    'setup.game.modsupport_on': '✔ Mod-Unterstützung ist in den Spieleinstellungen aktiviert – starte das Spiel einmal, damit es market.json anlegt, und klicke dann auf „Automatisch suchen“.',
     'setup.game.modsupport_off': '✖ Mod-Unterstützung ist im Spiel deaktiviert – es schreibt noch keine market.json.',
     'setup.game.modsupport_unknown': '⚠ Spieleinstellungen nicht gefunden – ist Screen Stocks installiert und wurde es mindestens einmal gestartet?',
     'setup.game.modsupport_steps': 'So aktivierst du die Mod-Unterstützung:\n1. Schließe Screen Stocks.\n2. Öffne {path} in einem Texteditor (z. B. Editor/Notepad).\n3. Ändere die Zeile "modSupport" : false in "modSupport" : true und speichere die Datei.\n4. Starte das Spiel – es legt den mods-Ordner mit market.json an. Klicke danach auf „Automatisch suchen“.',

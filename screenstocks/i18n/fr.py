@@ -272,7 +272,7 @@ STRINGS = {
     "setup.game.dir_missing": "✖ Le dossier n'existe pas",
     "setup.game.market_ok": "✔ market.json trouvé",
     "setup.game.market_missing": "⚠ market.json introuvable pour l'instant – activez la prise en charge des mods dans le jeu et lancez-le une fois.",
-    "setup.game.modsupport_on": "✔ La prise en charge des mods est activée dans les paramètres du jeu.",
+    "setup.game.modsupport_on": "✔ La prise en charge des mods est activée dans les paramètres du jeu – lancez le jeu une fois pour qu'il crée market.json, puis cliquez sur « Détecter automatiquement ».",
     "setup.game.modsupport_off": "✖ La prise en charge des mods est désactivée dans le jeu – il n'écrit pas encore market.json.",
     "setup.game.modsupport_unknown": "⚠ Fichier de paramètres du jeu introuvable – Screen Stocks est-il installé et a-t-il été lancé au moins une fois ?",
     "setup.game.modsupport_steps": "Activer la prise en charge des mods :\n1. Fermez Screen Stocks.\n2. Ouvrez {path} dans un éditeur de texte (par ex. le Bloc-notes).\n3. Remplacez la ligne \"modSupport\" : false par \"modSupport\" : true, puis enregistrez le fichier.\n4. Lancez le jeu – il crée le dossier mods avec market.json. Cliquez ensuite sur « Détecter automatiquement ».",

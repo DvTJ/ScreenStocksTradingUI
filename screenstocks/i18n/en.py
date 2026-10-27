@@ -257,7 +257,7 @@ STRINGS = {
     'setup.game.dir_missing': '✖ Folder does not exist',
     'setup.game.market_ok': '✔ market.json found',
     'setup.game.market_missing': '⚠ market.json not found yet – enable mod support in the game and start it once.',
-    'setup.game.modsupport_on': '✔ Mod support is enabled in the game settings.',
+    'setup.game.modsupport_on': '✔ Mod support is enabled in the game settings – start the game once so it creates market.json, then click “Detect automatically”.',
     'setup.game.modsupport_off': '✖ Mod support is disabled in the game – it does not write market.json yet.',
     'setup.game.modsupport_unknown': '⚠ Game settings file not found – is Screen Stocks installed and started at least once?',
     'setup.game.modsupport_steps': 'How to enable mod support:\n1. Close Screen Stocks.\n2. Open {path} in a text editor (e.g. Notepad).\n3. Change the line "modSupport" : false to "modSupport" : true and save the file.\n4. Start the game – it creates the mods folder with market.json. Then click “Detect automatically”.',
