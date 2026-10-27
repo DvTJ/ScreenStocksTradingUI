@@ -274,7 +274,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb xauth libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 \
-            libwayland-server0 libpulse0 libxcomposite1 \
+            libwayland-server0 libpulse0 libgl1-mesa-dri libxcomposite1 \
             libxdamage1 libxrandr2 libxtst6 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
           sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2   # renamed in 24.04
@@ -307,6 +307,15 @@ jobs:
           xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/on.db" 2>&1 | tee on.log
           grep -q "sandbox on" on.log
           sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh --remove
+
+      - name: No OpenGL - classic fallback instead of a crash
+        timeout-minutes: 5
+        run: |
+          set +e
+          LIBGL_DRIVERS_PATH=/nonexistent QT_XCB_GL_INTEGRATION=xcb_glx xvfb-run -a "$APP" --smoke-test \
+            --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/gl.db" 2>&1 | tee nogl.log
+          code=${PIPESTATUS[0]}
+          [ "$code" = 0 ] || [ "$code" = 3 ] || { echo "expected the web UI or the classic fallback, got exit code $code"; exit 1; }
 
       - name: Qt cannot start - classic fallback instead of a crash
         timeout-minutes: 5

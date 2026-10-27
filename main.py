@@ -178,11 +178,16 @@ def _probe_web() -> int:
     The last stderr line is the reason shown to the user."""
     try:
         from qtpy import QtWebEngineWidgets  # noqa: F401 - must be imported before the QApplication exists
+        from qtpy.QtGui import QOpenGLContext
         from qtpy.QtWidgets import QApplication
     except Exception as exc:  # e.g. a missing system library: "libGL.so.1: cannot open shared object file"
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
-    QApplication(sys.argv[:1])
+    app = QApplication(sys.argv[:1])
+    if not QOpenGLContext().create():         # Qt WebEngine needs OpenGL; a broken GLX aborts right here instead
+        print("OpenGL is not available", file=sys.stderr)
+        return 1
+    del app
     return 0
 
 
