@@ -26,6 +26,11 @@ if [ "$(id -u)" != "0" ]; then
     echo "Run it with sudo: sudo $0" >&2
     exit 1
 fi
+if [ ! -e /etc/apparmor.d/abi/4.0 ]; then
+    echo "This AppArmor version (older than 4.0) cannot allow user namespaces per program;" >&2
+    echo "the app keeps running its web view without the sandbox." >&2
+    exit 1
+fi
 
 dir=$(cd "$(dirname "$0")" && pwd)
 app="$dir/ScreenStocksTradingBot"

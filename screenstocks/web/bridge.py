@@ -16,6 +16,7 @@ from ..automation import AutomationEngine
 from ..collector import Collector
 from ..i18n import get_language, texts
 from ..storage import Storage
+from . import close_window
 from .automation_api import AutomationApi
 from .bot_api import BotApi
 from .market import MarketApi
@@ -84,7 +85,7 @@ class Bridge(MarketApi, AutomationApi, BotApi, PortfolioApi, AnalysisApi, Settin
 
     def _close_window(self) -> None:
         if self._window is not None:
-            self._window.destroy()
+            close_window(self._window)
 
     # ------------------------------------------------------------------ startup
 

@@ -1,5 +1,6 @@
 """Starts the web UI window."""
 
+import importlib.util
 import logging
 import os
 import sys
@@ -15,7 +16,7 @@ from ..automation import AutomationEngine
 from ..collector import Collector
 from ..i18n import t
 from ..settings import resource_path
-from . import qt_sandbox_fix
+from . import close_window, qt_sandbox_fix
 from .bridge import Bridge
 
 log = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ def _smoke_test(window, result: dict) -> None:
         if not result.get("tabs"):
             time.sleep(0.5)
     log.info("smoke test: %s tabs, renderer %s", result.get("tabs", 0), getattr(webview, "renderer", None))
-    window.destroy()
+    close_window(window)
 
 
 def run(start_backend: Callable[[], tuple[Collector, AutomationEngine, Path, Path]], setup: bool = False,
@@ -68,8 +69,11 @@ def run(start_backend: Callable[[], tuple[Collector, AutomationEngine, Path, Pat
     if sys.platform.startswith("linux"):
         qt_sandbox_fix()
     icon = resource_path("assets/icon.ico" if sys.platform == "win32" else "assets/icon.png")  # GTK / Qt want a png
+    # Linux build without GTK bindings: Qt directly (pywebview would try GTK first and log a traceback)
+    gui = "qt" if sys.platform.startswith("linux") and importlib.util.find_spec("gi") is None else None
     result: dict = {}
     webview.start(_smoke_test if smoke else None, (window, result) if smoke else None,
-                  debug=debug, icon=str(icon) if icon.exists() else None)
+                  gui=gui, debug=debug, icon=str(icon) if icon.exists() else None)
+    log.info("web UI closed")
     bridge._shutdown()
     return bool(result.get("tabs")) if smoke else True

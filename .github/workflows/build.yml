@@ -272,8 +272,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb xauth libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libxcomposite1 \
-            libxdamage1 libxrandr2 libxtst6 libasound2 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxdamage1 libxrandr2 libxtst6 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
+          sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2   # renamed in 24.04
 
       - name: Web UI smoke test
         timeout-minutes: 5
@@ -290,6 +291,11 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
           xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/off.db" 2>&1 | tee off.log
           grep -q "sandbox off" off.log
+          if [ ! -e /etc/apparmor.d/abi/4.0 ]; then
+            # e.g. 22.04: the restriction is off by default and AppArmor 3 cannot grant user namespaces
+            if sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh; then echo "should refuse AppArmor 3"; exit 1; fi
+            exit 0
+          fi
           sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh
           xvfb-run -a "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/on.db" 2>&1 | tee on.log
           grep -q "sandbox on" on.log

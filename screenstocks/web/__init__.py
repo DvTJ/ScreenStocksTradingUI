@@ -75,6 +75,19 @@ def unblock_bundled_dlls() -> None:
                     pass                         # not marked, or no write access
 
 
+def close_window(window) -> None:
+    """Close a pywebview window from code. On macOS pywebview then stops the Cocoa event loop, but AppKit only
+    stops after the next event - without a click or key press the app would hang, so post an empty one."""
+    window.destroy()
+    if sys.platform != "darwin":
+        return
+    window.events.closed.wait(5)
+    import AppKit
+    event = AppKit.NSEvent.otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
+        AppKit.NSEventTypeApplicationDefined, (0, 0), 0, 0, 0, None, 0, 0, 0)
+    AppKit.NSApp.postEvent_atStart_(event, True)      # may be called from any thread
+
+
 def apparmor_label(paths=(Path("/proc/self/attr/apparmor/current"), Path("/proc/self/attr/current"))) -> str:
     """Name of the AppArmor profile this process runs under ("unconfined" or "" without one)."""
     for path in paths:
