@@ -84,6 +84,26 @@ def test_qt_only_linux_setup_is_probed(web, monkeypatch):
     assert web.webview_available() == (True, "")
 
 
+def test_stuck_page_call_does_not_keep_the_app_alive(monkeypatch):
+    import logging
+    import threading
+    import main
+    exits = []
+    monkeypatch.setattr(main.os, "_exit", exits.append)
+    monkeypatch.setattr(main.logging, "shutdown", lambda: None)
+    release = threading.Event()
+    stuck = threading.Thread(target=release.wait, name="page-call")     # like a pywebview call into a dead loop
+    stuck.start()
+    try:
+        main._leave_stuck_threads(logging.getLogger("test"), 3)
+    finally:
+        release.set()
+        stuck.join()
+    assert exits == [3]                                                  # the real exit code, not a hang
+    main._leave_stuck_threads(logging.getLogger("test"), 0)              # nothing stuck: normal exit
+    assert exits == [3]
+
+
 def test_self_command(monkeypatch):
     from screenstocks import settings
     monkeypatch.setattr(sys, "frozen", True, raising=False)

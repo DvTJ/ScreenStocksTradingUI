@@ -8,8 +8,10 @@
 import argparse
 import logging
 import multiprocessing
+import os
 import sqlite3
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -102,7 +104,10 @@ def main() -> int:
             web_works = run_web(start_backend, setup=need_setup, debug=args.debug_ui, smoke=args.smoke_test)
             if backend:
                 backend["collector"].join(timeout=2)
-            return 0 if web_works else 1
+            code = 0 if web_works else 1
+            if sys.platform != "win32":
+                _leave_stuck_threads(log, code)
+            return code
         except Exception as exc:  # e.g. WebView2 failed to start
             web_reason = f"{type(exc).__name__}: {exc}"
             log.exception("web UI failed, falling back to the classic interface")
@@ -151,6 +156,21 @@ def main() -> int:
         return _database_failed(log, exc, args.headless)
     collector.join(timeout=2)
     return 0
+
+
+def _leave_stuck_threads(log: logging.Logger, code: int) -> None:
+    """pywebview answers each page call on its own (non-daemon) thread through the GUI event loop. A call still
+    running when the window closed waits for that stopped loop forever (seen on macOS) and Python would never
+    exit - the app would keep its database lock. Recording and automation are stopped by now: give such threads
+    a moment, then leave without them."""
+    stuck = [th for th in threading.enumerate() if th is not threading.current_thread() and not th.daemon]
+    for th in stuck:
+        th.join(timeout=2)
+    stuck = [th.name for th in stuck if th.is_alive()]
+    if stuck:
+        log.warning("leaving %d stuck thread(s) behind: %s", len(stuck), ", ".join(stuck))
+        logging.shutdown()
+        os._exit(code)
 
 
 def _probe_web() -> int:

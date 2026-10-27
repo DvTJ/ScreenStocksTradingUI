@@ -651,7 +651,7 @@ STRINGS = {
     'web.fallback_text': "La nouvelle interface ne peut pas démarrer sur ce PC, l'interface classique s'ouvre donc à la place.\n\nRaison : {reason}\n\nIl manque généralement le runtime Microsoft WebView2. Ouvrir la page de téléchargement ?",
     'web.fallback_info': "La nouvelle interface ne peut pas démarrer sur cet ordinateur, l'interface classique s'ouvre donc à la place.\n\nRaison : {reason}",
     'web.fallback_info_linux': "La nouvelle interface ne peut pas démarrer sur cet ordinateur, l'interface classique s'ouvre donc à la place.\n\nRaison : {reason}\n\nElle a besoin d'une vue web GTK ou Qt : installez les paquets GTK WebKit (par ex. python3-gi gir1.2-webkit2-4.1) ou lancez pip install \"pywebview[qt]\".",
-    'web.fallback_info_linux_app': "La nouvelle interface ne peut pas démarrer sur cet ordinateur, l'interface classique s'ouvre donc à la place.\n\nRaison : {reason}\n\nSa vue web Qt a besoin de quelques bibliothèques système, par ex. sous Ubuntu : sudo apt install libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3",
+    'web.fallback_info_linux_app': "La nouvelle interface ne peut pas démarrer sur cet ordinateur, l'interface classique s'ouvre donc à la place.\n\nRaison : {reason}\n\nSa vue web Qt a besoin de quelques bibliothèques système, par ex. sous Ubuntu : sudo apt install libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libwayland-server0 libpulse0",
     'settings.ui': 'Interface',
     'settings.tab_about': 'À propos',
     'web.set.lang_note': 'La langue est appliquée immédiatement.',

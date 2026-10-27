@@ -91,7 +91,7 @@ tar -xzf ScreenStocksTradingBot-x.y.z-linux-x86_64.tar.gz
 
 The build is made on Ubuntu 22.04 (needs glibc 2.35 or newer) and includes Qt, but uses the usual X11/Qt system
 libraries. If it does not start, install them, on Debian/Ubuntu for example
-`sudo apt install libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3`. If Qt cannot start, the classic interface
+`sudo apt install libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libwayland-server0 libpulse0`. If Qt cannot start, the classic interface
 opens instead and names the libraries.
 
 Ubuntu 23.10 and newer (AppArmor) block the sandbox Qt WebEngine uses; there the app runs its web view without it
