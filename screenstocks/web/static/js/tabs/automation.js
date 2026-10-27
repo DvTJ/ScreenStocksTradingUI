@@ -37,6 +37,8 @@
             </div>
             <div class="rform-actions">
               <label class="switch"><input type="checkbox" data-f="repeat"><span class="track"></span>↻ ${esc(t("auto.repeat"))}</label>
+              <label class="rep-mod">${esc(t("auto.repeat_times"))}<input class="in num" type="number" min="0" step="1" data-f="repeat_times" placeholder="∞"></label>
+              <label class="rep-mod">${esc(t("auto.repeat_wait"))}<input class="in num" type="number" min="0" step="any" data-f="repeat_wait_min" placeholder="0"></label>
               <span class="spacer"></span>
               <button class="btn ghost" data-role="use-price">${esc(t("auto.use_price"))}</button>
               <button class="btn ghost hidden" data-role="cancel">${esc(t("auto.cancel_edit"))}</button>
@@ -115,6 +117,7 @@
       stock_id: f("stock_id").value, kind: f("kind").value, side: f("side").value, mode: f("mode").value,
       value: f("value").value, percent: f("percent").value, confirm_s: f("confirm_s").value, repeat: f("repeat").checked,
       activation: f("activation").disabled ? "" : f("activation").value,
+      repeat_times: f("repeat_times").value, repeat_wait_min: f("repeat_wait_min").value,
     };
   }
 
@@ -125,6 +128,7 @@
     const mode = f("mode");
     const trailingEntry = d.trailing_entry.includes(kind);
     f("activation").disabled = !trailingEntry;                  // only trailing buy / short have an activation price
+    f("repeat_times").disabled = f("repeat_wait_min").disabled = !f("repeat").checked;
     if (kind === "trailing_stop" || kind === "trailing_short") { fillSelect(mode, { pct: d.modes.trail }, "pct"); mode.disabled = true; }
     else if (kind === "trailing_buy") { fillSelect(mode, { pct: d.modes.trail_up }, "pct"); mode.disabled = true; }
     else if (exit) { fillSelect(mode, { pct: d.modes.pct, price: d.modes.price }); mode.disabled = false; }
@@ -172,6 +176,7 @@
     if (!f("mode").disabled) f("mode").value = r.mode;
     f("value").value = r.value; f("percent").value = r.percent; f("confirm_s").value = r.confirm_s; f("repeat").checked = r.repeat;
     f("activation").value = r.activation || "";
+    f("repeat_times").value = r.repeat_times; f("repeat_wait_min").value = r.repeat_wait_min;
     q('[data-role="form-title"]').textContent = t("web.auto.edit_rule", { id });
     q('[data-role="save"]').textContent = t("auto.save");
     q('[data-role="cancel"]').classList.remove("hidden");

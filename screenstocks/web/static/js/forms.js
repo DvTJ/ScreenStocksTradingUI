@@ -25,6 +25,11 @@
       const line = (cls, key, vars) => `<div class="${cls}">${esc(t(key, vars))}</div>`;
       let html = r.dir_ok ? line("ok", "setup.game.dir_ok") : line("bad", "setup.game.dir_missing");
       if (r.dir_ok) html += r.market_ok ? line("ok", "setup.game.market_ok") : line("warn", "setup.game.market_missing");
+      if (!r.market_ok) {
+        html += r.mod_support === true ? line("ok", "setup.game.modsupport_on")
+          : r.mod_support === false ? line("bad", "setup.game.modsupport_off") : line("warn", "setup.game.modsupport_unknown");
+        if (r.mod_support !== true) html += line("steps", "setup.game.modsupport_steps", { path: r.settings_file });
+      }
       if (!r.mods) {
         if (r.dir_ok) html += line("warn", "setup.game.mods_missing");
       } else {

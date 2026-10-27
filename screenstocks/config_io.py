@@ -14,7 +14,8 @@ from .automation import KIND_KEYS, MODE_KEYS, SIDE_KEYS
 from .storage import Storage
 
 FORMAT = "screenstocks-automation"
-RULE_FIELDS = ("stock_id", "kind", "side", "mode", "value", "percent", "confirm_s", "repeat", "activation")
+RULE_FIELDS = ("stock_id", "kind", "side", "mode", "value", "percent", "confirm_s", "repeat", "activation",
+               "repeat_times", "repeat_wait_s")
 
 
 def export_config(db: Storage, rule_ids=None, with_events: bool = True, with_bot: bool = False) -> dict:
@@ -48,7 +49,8 @@ def import_config(db: Storage, data: dict) -> int:
             continue
         rid = db.add_rule(r["stock_id"], r["kind"], r["side"], r["mode"], float(r["value"]), int(r["percent"]),
                           float(r.get("confirm_s", 0)), int(time.time() * 1000), bool(r.get("repeat")),
-                          activation=act)
+                          activation=act, repeat_times=int(r.get("repeat_times") or 0),
+                          repeat_wait_s=float(r.get("repeat_wait_s") or 0))
         if not r.get("enabled", True):
             db.update_rule(rid, enabled=0)
         known.add(key)

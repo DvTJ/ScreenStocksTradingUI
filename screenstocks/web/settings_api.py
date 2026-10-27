@@ -71,7 +71,8 @@ class SettingsApi:
         mods = settings_mod.read_mod_settings(p) if path else None
         return {"dir_ok": ok, "market_ok": ok and (p / config.MARKET_FILE).exists(),
                 "mods": None if mods is None else {"export": bool(mods.get("export")),
-                                                   "commands": bool(mods.get("commands"))}}
+                                                   "commands": bool(mods.get("commands"))},
+                "mod_support": settings_mod.mod_support_enabled(), "settings_file": str(settings_mod.game_settings_file())}
 
     def browse_export(self, start: str) -> Optional[str]:
         result = self._window.create_file_dialog(webview.FileDialog.FOLDER, directory=start if Path(start or "").is_dir() else "")

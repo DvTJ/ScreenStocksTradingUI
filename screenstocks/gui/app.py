@@ -1,5 +1,6 @@
 """tkinter dashboard on top of the recorded history."""
 
+import math
 import time
 import tkinter as tk
 from dataclasses import dataclass, field
@@ -15,7 +16,7 @@ from .. import __version__, config, config_io, settings as settings_mod, updater
 from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, AutomationEngine, condition_met,
                           describe_trigger, has_position, kind_name, mode_name, needs_position, side_name,
                           status_display, status_msg, trigger_price, TRAILING_ENTRY, activation_op,
-                          activation_reached)
+                          activation_reached, round_help)
 from ..collector import Collector, CollectorStatus
 from ..events import EventSettings, load_settings as load_event_settings, save_settings as save_event_settings
 from ..commands import ACTIONS, CommandWriter, action_label, action_name, normalize_percent, reason_text, status_text
@@ -969,6 +970,8 @@ class AutomationTab(ttk.Frame):
         self.pct_var = tk.StringVar(value="100")
         self.confirm_var = tk.StringVar(value="0")
         self.repeat_var = tk.BooleanVar(value=False)
+        self.times_var = tk.StringVar()        # repeat: runs per round (empty = no rounds)
+        self.wait_var = tk.StringVar()         # repeat: pause after a round in minutes
         self.act_var = tk.StringVar()          # trailing buy / short: activation price (optional)
         self._editing: Optional[int] = None
 
@@ -999,10 +1002,15 @@ class AutomationTab(ttk.Frame):
                                                    justify="right", bg=THEME["panel"], fg=THEME["fg"],
                                                    buttonbackground=THEME["panel_alt"], insertbackground=THEME["fg"],
                                                    relief="flat"))
-        tk.Checkbutton(form, text="↻ " + t("auto.repeat"), variable=self.repeat_var,
+        rf = ttk.Frame(form, style="Card.TFrame")
+        tk.Checkbutton(rf, text="↻ " + t("auto.repeat"), variable=self.repeat_var,
                        bg=THEME["panel_alt"], fg=THEME["fg"], selectcolor=THEME["panel"],
                        activebackground=THEME["panel_alt"], activeforeground=THEME["fg"],
-                       font=THEME["font_bold"], highlightthickness=0, bd=0).grid(row=1, column=7, padx=(0, 12))
+                       font=THEME["font_bold"], highlightthickness=0, bd=0).pack(side="left")
+        for title, var in ((t("auto.repeat_times"), self.times_var), (t("auto.repeat_wait"), self.wait_var)):
+            ttk.Label(rf, text=title, style="CardMuted.TLabel").pack(side="left", padx=(8, 3))
+            ttk.Entry(rf, textvariable=var, width=4, justify="right").pack(side="left")
+        rf.grid(row=1, column=7, padx=(0, 12))
         ttk.Button(form, text=t("auto.use_price"), command=self._use_price).grid(row=1, column=8, padx=(0, 6))
         self.add_btn = tk.Button(form, text=t("auto.add"), command=self._add_rule, bg=THEME["accent"], fg="#0d1117",
                                  activebackground=blend(THEME["accent"], "#ffffff", 0.8), font=THEME["font_bold"],
@@ -1014,7 +1022,7 @@ class AutomationTab(ttk.Frame):
         self.help = ttk.Label(form, text="", style="CardMuted.TLabel", wraplength=1100, justify="left")
         self.help.grid(row=2, column=0, columnspan=11, sticky="w", pady=(6, 0))
         for var in (self.kind_var, self.side_var, self.mode_var, self.pct_var, self.value_var, self.stock_var,
-                    self.repeat_var, self.act_var):
+                    self.repeat_var, self.act_var, self.times_var, self.wait_var):
             var.trace_add("write", lambda *_: self._update_form())
 
         # ---- rules + log
@@ -1070,7 +1078,11 @@ class AutomationTab(ttk.Frame):
             kind = self._key(KIND_KEYS, kind_name, self.kind_var.get())
             act_text = self.act_var.get().strip()
             activation = float(act_text.replace(",", ".")) if kind in TRAILING_ENTRY and act_text else None
+            times = float(self.times_var.get().strip().replace(",", ".") or 0)
+            wait = float(self.wait_var.get().strip().replace(",", ".") or 0) * 60
         except ValueError:
+            return None
+        if not (math.isfinite(times) and math.isfinite(wait)):
             return None
         mode = "price" if kind in ("buy_limit", "short_limit") else \
             "pct" if kind in ("trailing_stop", *TRAILING_ENTRY) else self._key(MODE_KEYS, mode_name, self.mode_var.get())
@@ -1078,7 +1090,8 @@ class AutomationTab(ttk.Frame):
                 or self._key(SIDE_KEYS, side_name, self.side_var.get()))
         return dict(id=0, stock_id=self.stock_var.get(), kind=kind, side=side,
                     mode=mode, value=value, percent=pct, confirm_s=confirm, extreme=None,
-                    repeat=int(self.repeat_var.get()), runs=0, activation=activation)
+                    repeat=int(self.repeat_var.get()), runs=0, activation=activation,
+                    repeat_times=times, repeat_wait_s=wait)
 
     def _edit_rule(self) -> None:
         rid = self._selected_rule_id()
@@ -1094,6 +1107,8 @@ class AutomationTab(ttk.Frame):
         self.pct_var.set(str(r["percent"]))
         self.confirm_var.set(f"{r['confirm_s']:g}")
         self.repeat_var.set(bool(r["repeat"]))
+        self.times_var.set(str(r["repeat_times"] or ""))
+        self.wait_var.set(f"{r['repeat_wait_s'] / 60:g}" if r["repeat_wait_s"] else "")
         self.act_var.set(f"{r['activation']:g}".replace(".", fmt.decimal_sep()) if r["activation"] else "")
         self.add_btn.configure(text=t("auto.save"))
         self.cancel_btn.grid()
@@ -1139,6 +1154,8 @@ class AutomationTab(ttk.Frame):
             if needs_position(rule) and not has_position(rule, pos):
                 text += "   ·   " + t("auto.no_position", side=side_name(side), stock=rule["stock_id"])
         text += "\n" + (t("auto.repeat_on_help") if self.repeat_var.get() else t("auto.repeat_off_help"))
+        if rule and round_help(rule):
+            text += "\n" + round_help(rule)
         self.help.configure(text=text)
 
     def _use_price(self) -> None:
@@ -1162,6 +1179,10 @@ class AutomationTab(ttk.Frame):
         if rule["activation"] is not None and rule["activation"] <= 0:
             messagebox.showwarning(t("auto.rule_title"), t("auto.invalid_activation"), parent=self)
             return
+        if rule["repeat_times"] < 0 or rule["repeat_times"] != int(rule["repeat_times"]) or rule["repeat_wait_s"] < 0:
+            messagebox.showwarning(t("auto.rule_title"), t("auto.invalid_repeat"), parent=self)
+            return
+        rule["repeat_times"] = int(rule["repeat_times"])
         ctx = self._ctx
         last = ctx.last_prices.get(rule["stock_id"]) if ctx else None
         pos = ctx.positions.get(rule["stock_id"]) if ctx else None
@@ -1178,7 +1199,8 @@ class AutomationTab(ttk.Frame):
             ctx.db.update_rule(rid, stock_id=rule["stock_id"], kind=rule["kind"], side=rule["side"], mode=rule["mode"],
                                value=rule["value"], percent=rule["percent"], confirm_s=rule["confirm_s"],
                                repeat=rule["repeat"], activation=rule["activation"], extreme=None,
-                               status=status_msg("rule.st.active"))
+                               repeat_times=rule["repeat_times"], repeat_wait_s=rule["repeat_wait_s"],
+                               pause_until_ms=None, status=status_msg("rule.st.active"))
             ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                             t("rule.log.edited", kind=kind_name(rule["kind"]),
                               trigger=describe_trigger(rule, None, fmt.price, fmt.decimal_sep()), p=rule["percent"],
@@ -1189,7 +1211,8 @@ class AutomationTab(ttk.Frame):
         rid = ctx.db.add_rule(rule["stock_id"], rule["kind"], rule["side"], rule["mode"], rule["value"],
                               rule["percent"], rule["confirm_s"], int(time.time() * 1000),
                               repeat=bool(rule["repeat"]), status=status_msg("rule.st.active"),
-                              activation=rule["activation"])
+                              activation=rule["activation"], repeat_times=rule["repeat_times"],
+                              repeat_wait_s=rule["repeat_wait_s"])
         ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                         t("rule.log.created", kind=kind_name(rule["kind"]),
                           side=side_name(rule["side"]) if rule["kind"] in EXIT_KINDS else "",
@@ -1218,7 +1241,7 @@ class AutomationTab(ttk.Frame):
         if rule:
             on = not rule["enabled"]
             self._ctx.db.update_rule(rid, enabled=int(on), status=status_msg("rule.st.active") if on else status_msg("rule.st.disabled"),
-                                     **({"extreme": None} if on else {}))
+                                     **({"extreme": None, "pause_until_ms": None} if on else {}))
             self._ctx.db.log_rule(int(time.time() * 1000), rid, rule["stock_id"],
                                   t("rule.log.enabled") if on else t("rule.log.disabled_manual"))
             self.app.refresh_now()

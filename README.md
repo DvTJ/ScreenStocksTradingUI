@@ -23,7 +23,9 @@ missing (it ships with Windows 10/11), the app starts the classic interface auto
   limit short, trailing buy / trailing short (follow the low / high and enter when the price turns by X %, optionally
   only once the price has reached an activation level). Optional "confirm after N seconds" against short spikes. By default a rule fires once and
   disables itself; with **↻ Repeat** it stays active and fires again each time the price leaves the
-  trigger zone and reaches it again. Cooldown / rate-limit rejections are retried automatically.
+  trigger zone and reaches it again. A repeating rule can run in rounds: **Runs per round** N and
+  **Pause (min)** Z make it pause Z minutes after every N runs (without a pause it switches itself off after N runs).
+  Cooldown / rate-limit rejections are retried automatically.
 - **Announced events** – the game announces pumps (~1 min ahead) and crashes (hours ahead). With the switches
   in the Automation tab (off by default) the app buys after a pump announcement, sells close to the announced
   target (or on the pullback from the peak), shorts and covers near the starting price; before a crash it sells
@@ -69,6 +71,15 @@ missing (it ships with Windows 10/11), the app starts the classic interface auto
 Download the latest `ScreenStocksTradingBot-Setup-x.y.z.exe` from
 [Releases](../../releases) and run it. No admin rights are needed (per-user install).
 A portable ZIP is attached to every release as well.
+
+**Enable mod support in the game first.** The game only writes `market.json` once mod support is on:
+
+1. Close Screen Stocks.
+2. Open `%USERPROFILE%\AppData\LocalLow\Conradical Games\Screen Stocks\thesmallshort_online_settings.sav`
+   in a text editor and change `"modSupport" : false` to `"modSupport" : true`.
+3. Start the game – it creates the `mods` folder (`export`, `commands`, `skins`).
+
+The setup wizard checks this flag and shows these steps when `market.json` is missing.
 
 On first start a short setup wizard asks for:
 

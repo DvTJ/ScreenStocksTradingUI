@@ -5,6 +5,8 @@ market.json prices and fires trade commands through the mod's command files.
 A rule is one-shot by default: after a successful execution it disables itself.
 With "repeat" it stays enabled and re-arms once the price has left the trigger
 zone again, so a limit buy below its limit does not fire on every tick.
+Optionally it repeats in rounds: after repeat_times runs it pauses repeat_wait_s
+(or, without a pause, switches itself off).
 """
 
 import json
@@ -135,6 +137,19 @@ def left_zone(rule: dict, price: float) -> bool:
         return False
     reach = ZONE_K * (rule["value"] or 0) / 100
     return price > act * (1 + reach) if rule["kind"] == "trailing_buy" else price < act * (1 - reach)
+
+
+def round_size(rule: dict) -> int:
+    """Runs per round of a repeat rule; 0 = no rounds (it repeats until switched off)."""
+    return max(0, int(rule.get("repeat_times") or 0)) if rule["repeat"] else 0
+
+
+def round_help(rule: dict) -> str:
+    n = round_size(rule)
+    if not n:
+        return ""
+    wait = rule.get("repeat_wait_s") or 0
+    return t("auto.repeat_round_help", n=n, m=f"{wait / 60:g}") if wait else t("auto.repeat_stop_help", n=n)
 
 
 def describe_trigger(rule: dict, trig: Optional[float], fmt_price, decimal_sep: str = ".") -> str:
@@ -375,6 +390,12 @@ class AutomationEngine(threading.Thread):
                     # a low / high from before the restart is stale: follow the price afresh
                     rule["extreme"] = None
                     db.update_rule(rid, extreme=None)
+            pause = rule.get("pause_until_ms") if rule["repeat"] else None
+            if pause and pause > now * 1000:
+                # a round of a repeat rule is done; afterwards it re-arms like after any other run
+                self._since.pop(rid, None)
+                self._set_status(db, rule, status_msg("rule.st.paused", n=rule["runs"], time=fmt.clock(pause)))
+                continue
             if not enabled or not live or price is None:
                 self._since.pop(rid, None)
                 if not enabled and rule["kind"] in TRAILING_ENTRY and rule["extreme"] is not None:
@@ -450,15 +471,24 @@ class AutomationEngine(threading.Thread):
                 rule["runs"] = runs
                 self._log(db, rule, t("rule.log.done", action=action_name(sent.action), p=sent.percent)
                           + (f" ({runs}×)" if rule["repeat"] else ""))
-                if rule["repeat"]:
-                    db.update_rule(rule["id"], runs=runs, extreme=None)
-                    rule["extreme"] = None
+                n = round_size(rule)
+                round_end = bool(n) and runs % n == 0
+                wait = rule.get("repeat_wait_s") or 0
+                if rule["repeat"] and not (round_end and not wait):
+                    pause = int((time.time() + wait) * 1000) if round_end else None
+                    db.update_rule(rule["id"], runs=runs, extreme=None, pause_until_ms=pause)
+                    rule["extreme"], rule["pause_until_ms"] = None, pause
                     self._since.pop(rule["id"], None)
                     self._rearm.add(rule["id"])
-                    self._set_status(db, rule, status_msg("rule.st.rearm", n=runs))
+                    if pause:
+                        self._log(db, rule, t("rule.log.paused", n=n, m=f"{wait / 60:g}"))
+                    self._set_status(db, rule, status_msg("rule.st.paused", n=runs, time=fmt.clock(pause)) if pause
+                                     else status_msg("rule.st.rearm", n=runs))
                 else:
                     db.update_rule(rule["id"], enabled=0, runs=runs)
                     self._set_status(db, rule, status_msg("rule.st.done"))
+                    if rule["repeat"]:
+                        self._log(db, rule, t("rule.log.round_stop", n=n))
             elif status in ("rejected", "failed"):
                 self._pending.pop(rule["id"])
                 if reason in RETRY_REASONS:

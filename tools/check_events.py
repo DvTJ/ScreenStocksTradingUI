@@ -195,6 +195,47 @@ def check_rules_yield():
           f"stop-loss #{r_stop} sent")
 
 
+def check_repeat_rounds():
+    """Repeat in rounds: 2 runs, then a pause; after the pause the next round; without a pause the rule stops."""
+    T = 90_000_000
+    db = new_db()
+    db.store_market(MarketSnapshot(
+        format_version=1, game_version="test", sequence=1, written_at_ms=T, server_time_ms=T, server_tick=1,
+        last_price_update_at_ms=T, market_ready=True, stocks=[Stock("$B", "$B", 20.0, True, 20.0, 1000, 0, 1000, 10**9)],
+        player=Player(1000.0, 11000.0, 1, 0, 0, 0, BUY_CD_S, SHORT_CD_S, [Position("$B", 500, 25.0, 0, 0)]),
+        market_news=[], scheduled_news=[]))
+    rid = db.add_rule("$B", "stop_loss", "long", "price", 25.0, 10, 0.0, T, repeat=True,
+                      repeat_times=2, repeat_wait_s=600)
+    stop = db.add_rule("$B", "stop_loss", "long", "price", 24.0, 10, 0.0, T, repeat=True, repeat_times=1)
+    game = FakeGame(db, 1000.0, {"$B": 500})
+    game.now, game.prices = T, {"$B": 20.0}
+    collector = SimpleNamespace(status=SimpleNamespace(copy=lambda: SimpleNamespace(last_market_read=time.time())))
+    engine = AutomationEngine(collector, db.path, game)
+    engine.bot.calibrated = True
+    rule = lambda i: next(r for r in db.rules() if r["id"] == i)  # noqa: E731
+
+    def step():
+        engine._rearm.clear()                        # stands in for the price leaving the trigger zone
+        engine._step(db)
+
+    for _ in range(4):                               # fire, done, fire, done
+        step()
+    assert rule(rid)["runs"] == 2 and rule(rid)["pause_until_ms"] > time.time() * 1000, rule(rid)
+    assert not rule(stop)["enabled"] and rule(stop)["runs"] == 1, "a round without a pause switches the rule off"
+    sent = len(game.sent)
+    step()
+    step()
+    assert len(game.sent) == sent and json.loads(rule(rid)["status"])["k"] == "rule.st.paused", "no run while paused"
+    db.update_rule(rid, pause_until_ms=int(time.time() * 1000) - 1)
+    step()
+    assert len(game.sent) == sent + 1, "the next round starts after the pause"
+    step()                                           # done: run 3, mid-round
+    db.update_rule(rid, repeat=0, pause_until_ms=int(time.time() * 1000) + 600_000)
+    step()
+    assert len(game.sent) == sent + 2, "without repeat an old pause does not hold the rule"
+    print(f"repeat rounds: {status_display(rule(rid)['status'])!r}, {len(game.sent)} sells")
+
+
 def check_rule_near():
     """A far-away limit rule must not stop the bot's entries of its kind (a limit buy at 2 with the price at 30)."""
     from screenstocks.bot import rule_near
@@ -240,4 +281,5 @@ if __name__ == "__main__":
     check_pump()
     check_crash()
     check_rules_yield()
+    check_repeat_rounds()
     print("ok")

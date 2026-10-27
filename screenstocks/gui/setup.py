@@ -119,13 +119,21 @@ class SetupWizard(ttk.Frame):
         for w in self.game_checks.winfo_children():
             w.destroy()
         path = Path(self.export_var.get())
+        market = (path / config.MARKET_FILE).exists()
         lines = [("setup.game.dir_ok", "Ok") if path.is_dir() else ("setup.game.dir_missing", "Bad")]
         if path.is_dir():
-            lines.append(("setup.game.market_ok", "Ok") if (path / config.MARKET_FILE).exists()
-                         else ("setup.game.market_missing", "Warn"))
+            lines.append(("setup.game.market_ok", "Ok") if market else ("setup.game.market_missing", "Warn"))
+        modsupport = None if market else settings_mod.mod_support_enabled()
+        if not market:
+            lines.append({True: ("setup.game.modsupport_on", "Ok"), False: ("setup.game.modsupport_off", "Bad")}
+                         .get(modsupport, ("setup.game.modsupport_unknown", "Warn")))
         for key, style in lines:
             ttk.Label(self.game_checks, text=t(key), style=f"{style}.TLabel", wraplength=560,
                       justify="left").pack(anchor="w", pady=1)
+        if not market and modsupport is not True:
+            ttk.Label(self.game_checks, text=t("setup.game.modsupport_steps",
+                                               path=str(settings_mod.game_settings_file())),
+                      style="Body.TLabel", wraplength=560, justify="left").pack(anchor="w", pady=(4, 6))
         mods = settings_mod.read_mod_settings(path)
         if mods is None:
             if path.is_dir():
