@@ -35,8 +35,8 @@ class Stock:
     base_price: float
     price_cap: float
     dividend_rate: float
-    max_volume: int
-    available_shares: int
+    max_volume: float        # share counts outgrow SQLite's 64-bit integers late in the game
+    available_shares: float
 
 
 @dataclass
@@ -151,8 +151,8 @@ def parse_market(d: dict) -> MarketSnapshot:
             base_price=_float(s.get("basePrice")),
             price_cap=_float(s.get("priceCap")),
             dividend_rate=_float(s.get("dividendRate")),
-            max_volume=_int(s.get("maxVolume")),
-            available_shares=_int(s.get("availableShares")),
+            max_volume=_float(s.get("maxVolume")),
+            available_shares=_float(s.get("availableShares")),
         )
         for s in d.get("stocks") or []
     ]
