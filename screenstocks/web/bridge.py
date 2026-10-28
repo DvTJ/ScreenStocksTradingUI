@@ -8,7 +8,6 @@ to JavaScript; internal state lives in underscore attributes.
 import logging
 import threading
 import time
-import webbrowser
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +16,7 @@ from ..automation import AutomationEngine
 from ..collector import Collector
 from ..i18n import get_language, texts
 from ..storage import Storage
+from . import close_window
 from .automation_api import AutomationApi
 from .bot_api import BotApi
 from .market import MarketApi
@@ -85,7 +85,7 @@ class Bridge(MarketApi, AutomationApi, BotApi, PortfolioApi, AnalysisApi, Settin
 
     def _close_window(self) -> None:
         if self._window is not None:
-            self._window.destroy()
+            close_window(self._window)
 
     # ------------------------------------------------------------------ startup
 
@@ -187,7 +187,7 @@ class Bridge(MarketApi, AutomationApi, BotApi, PortfolioApi, AnalysisApi, Settin
 
     def open_url(self, url: str) -> None:
         if isinstance(url, str) and url.startswith(ALLOWED_LINKS):
-            webbrowser.open(url)
+            settings_mod.open_url(url)
 
     def log_client_error(self, message: str) -> None:
         """JavaScript errors end up in app.log, too."""

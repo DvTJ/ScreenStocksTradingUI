@@ -1,7 +1,7 @@
 name: Build
 
-# Push a tag like v1.0.0 to build the installer and publish a GitHub release.
-# Pushes to main, pull requests and "Run workflow" (manual) build the same files and
+# Push a tag like v1.0.0 to build the Windows installer, the macOS and Linux apps and publish a
+# GitHub release. Pushes to main, pull requests and "Run workflow" (manual) build the same files and
 # attach them as workflow artifacts only.
 on:
   push:
@@ -14,6 +14,28 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: python -m pip install pytest
+
+      - name: Tests
+        run: |
+          python -m pytest -q
+          python tools/check_bot.py
+          python tools/check_events.py
+
   windows:
     runs-on: windows-latest
     steps:
@@ -92,11 +114,238 @@ jobs:
             dist/installer/*.exe
             dist/*-portable.zip
 
-      - name: Publish release
+  macos:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = python -c "import screenstocks; print(screenstocks.__version__)"
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Version: $version"
+
+      - name: Set app version from tag
         if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          Set-Content -Path screenstocks/__init__.py -Encoding utf8 -Value @(
+            '"""ScreenStocks market data reader, history recorder and trading helper."""',
+            '',
+            "__version__ = `"$env:VERSION`""
+          )
+
+      # Pillow converts assets/icon.png to the .icns the app bundle needs.
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller==6.22.3 pillow -r requirements.txt
+
+      - name: Build app (PyInstaller)
+        run: pyinstaller --noconfirm ScreenStocksTradingBot.spec
+
+      - name: Smoke test
+        run: dist/ScreenStocksTradingBot.app/Contents/MacOS/ScreenStocksTradingBot --version
+
+      # opens the real window: page, scripts and the Python bridge must work (exit code 0)
+      - name: Web UI smoke test
+        timeout-minutes: 5
+        run: dist/ScreenStocksTradingBot.app/Contents/MacOS/ScreenStocksTradingBot --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/smoke.db"
+
+      - name: App log
+        if: always()
+        run: cat "$HOME/Library/Application Support/ScreenStocksTradingBot/app.log" || true
+
+      # hdiutil sometimes fails with "Resource busy" on the runners (actions/runner-images#7522): retry
+      - name: Disk image
+        run: |
+          for i in 1 2 3 4 5; do
+            hdiutil create -volname "ScreenStocks Trading Bot" -srcfolder dist/ScreenStocksTradingBot.app -ov -format UDZO "dist/ScreenStocksTradingBot-$VERSION-macos-${{ matrix.arch }}.dmg" && exit 0
+            sleep 10
+          done
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenStocksTradingBot-${{ env.VERSION }}-macos-${{ matrix.arch }}
+          path: dist/*.dmg
+
+  linux:
+    # the older glibc of 22.04 lets the build run on more distributions
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $version = python -c "import screenstocks; print(screenstocks.__version__)"
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Version: $version"
+
+      - name: Set app version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          Set-Content -Path screenstocks/__init__.py -Encoding utf8 -Value @(
+            '"""ScreenStocks market data reader, history recorder and trading helper."""',
+            '',
+            "__version__ = `"$env:VERSION`""
+          )
+
+      # PyInstaller loads Qt while analysing it, which needs these system libraries.
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libnss3 \
+            libxcomposite1 libxdamage1 libxrandr2 libxtst6 libasound2
+
+      # PySide6 (LGPL) rather than PyQt6 (GPL): the bundled Qt binding must not turn the app's licence into GPL
+      - name: Install PyInstaller
+        run: python -m pip install pyinstaller==6.22.3 "pywebview[pyside6]" -r requirements.txt
+
+      - name: Build app (PyInstaller)
+        run: pyinstaller --noconfirm ScreenStocksTradingBot.spec
+
+      - name: Smoke test
+        run: dist/ScreenStocksTradingBot/ScreenStocksTradingBot --version
+
+      # tar keeps the executable bit
+      - name: Archive
+        run: |
+          install -m 755 installer/linux/install-apparmor-profile.sh dist/ScreenStocksTradingBot/
+          tar -C dist -czf "dist/ScreenStocksTradingBot-$VERSION-linux-x86_64.tar.gz" ScreenStocksTradingBot
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenStocksTradingBot-${{ env.VERSION }}-linux-x86_64
+          path: dist/*.tar.gz
+
+  # The Linux tarball on desktop-like systems (older and current Ubuntu), installed the way the README says:
+  # the web UI under Xvfb, the Qt WebEngine sandbox with and without the AppArmor profile, and the classic
+  # fallback when Qt cannot start.
+  linux-desktop:
+    needs: linux
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    env:
+      APP: ./ScreenStocksTradingBot/ScreenStocksTradingBot
+      XVFB_SCREEN: -screen 0 1600x1000x24     # xvfb-run's default 8-bit screen has no OpenGL visuals
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-linux-x86_64"
+          merge-multiple: true
+
+      - name: Unpack
+        run: |
+          tar -xzf ScreenStocksTradingBot-*-linux-x86_64.tar.gz
+          "$APP" --probe-web || true      # what a bare system lacks (the reason the app would show)
+
+      - name: Install the libraries the README lists, plus Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 \
+            libwayland-server0 libpulse0 libgl1-mesa-dri libgbm1 libxcomposite1 \
+            libxdamage1 libxrandr2 libxtst6 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
+          sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2   # renamed in 24.04
+
+      - name: Web UI smoke test
+        timeout-minutes: 5
+        run: |
+          "$APP" --probe-web || true      # shows why Qt cannot start, if it cannot (needs no display for imports)
+          echo "bundled copies of system libraries:"
+          find ScreenStocksTradingBot -maxdepth 2 -name "lib*.so*" | grep -E "stdc|gcc_s|drm|xcb|X11|glapi|gbm|expat|ffi|zstd|LLVM|Xext|xshm" || true
+          LIBGL_DEBUG=verbose xvfb-run -a -s "$XVFB_SCREEN" "$APP" --probe-web 2>&1 | tail -n 25 || true
+          echo "system libraries the bundle still lacks:"
+          LD_LIBRARY_PATH=$(find "$PWD/ScreenStocksTradingBot" -type d | tr '\n' ':') \
+            find ScreenStocksTradingBot -name "*.so*" -type f -exec ldd {} + 2>/dev/null | grep "not found" | sort -u || true
+          xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/smoke.db" 2>&1 | tee smoke.log
+          grep -q "smoke test: [1-9]" smoke.log
+
+      - name: AppArmor user namespace restriction - sandbox off without the profile, on with it
+        timeout-minutes: 10
+        run: |
+          if [ ! -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            echo "this kernel has no AppArmor user namespace restriction"; exit 0
+          fi
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
+          xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/off.db" 2>&1 | tee off.log
+          grep -q "sandbox off" off.log
+          if [ ! -e /etc/apparmor.d/abi/4.0 ]; then
+            # e.g. 22.04: the restriction is off by default and AppArmor 3 cannot grant user namespaces
+            if sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh; then echo "should refuse AppArmor 3"; exit 1; fi
+            exit 0
+          fi
+          sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh
+          xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/on.db" 2>&1 | tee on.log
+          grep -q "sandbox on" on.log
+          sudo ./ScreenStocksTradingBot/install-apparmor-profile.sh --remove
+
+      - name: Broken OpenGL - the web UI draws in software instead of crashing
+        timeout-minutes: 5
+        run: |
+          LIBGL_DRIVERS_PATH=/nonexistent xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test \
+            --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/gl.db" 2>&1 | tee nogl.log
+          grep -q "smoke test: [1-9]" nogl.log
+
+      - name: Qt cannot start - classic fallback instead of a crash
+        timeout-minutes: 5
+        run: |
+          set +e
+          QT_QPA_PLATFORM=missing xvfb-run -a -s "$XVFB_SCREEN" "$APP" --smoke-test --export-dir "$RUNNER_TEMP/export" --db "$RUNNER_TEMP/fb.db" 2>&1 | tee fallback.log
+          code=${PIPESTATUS[0]}
+          [ "$code" = 3 ] || { echo "expected exit code 3 (web UI unavailable, classic fallback), got $code"; exit 1; }
+          grep -q "Qt cannot start" fallback.log
+
+  # The Windows files are published even when a macOS or Linux build failed (re-run it, then re-run this job).
+  release:
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.windows.result == 'success' }}
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/installer/*.exe
             dist/*-portable.zip
+            dist/*.dmg
+            dist/*.tar.gz
+          fail_on_unmatched_files: false
           generate_release_notes: true

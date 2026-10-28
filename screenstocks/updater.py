@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import urllib.request
 from dataclasses import dataclass
@@ -44,7 +45,13 @@ def _request(url: str, timeout: float) -> urllib.request.Request:
 def fetch_latest(timeout: float = 10.0) -> Release:
     with urllib.request.urlopen(_request(API_URL, timeout), timeout=timeout) as resp:
         data = json.load(resp)
-    asset = next((a for a in data.get("assets", []) if INSTALLER_PATTERN.match(a.get("name", ""))), None)
+    return parse_release(data)
+
+
+def parse_release(data: dict) -> Release:
+    """Release from the GitHub API JSON. Only Windows has an installer; elsewhere the UIs link the release page."""
+    asset = next((a for a in data.get("assets", []) if INSTALLER_PATTERN.match(a.get("name", ""))),
+                 None) if sys.platform == "win32" else None
     return Release(
         version=str(data.get("tag_name", "")).lstrip("vV"),
         page_url=data.get("html_url", f"https://github.com/{config.GITHUB_REPO}/releases"),

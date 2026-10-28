@@ -14,6 +14,10 @@ live and reloads its page with texts() of the new language.
 
 import ctypes
 import locale
+import os
+import re
+import subprocess
+import sys
 from typing import Optional
 
 from . import de, en, fr
@@ -55,13 +59,26 @@ def keys() -> list[str]:
 
 
 def system_language() -> str:
-    """'de' / 'fr' for a German / French Windows UI, otherwise 'en'."""
+    """'de' / 'fr' for a German / French system UI, otherwise 'en'."""
     try:
         primary = ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF
         return {0x07: "de", 0x0C: "fr"}.get(primary, "en")
     except Exception:
         loc = (locale.getlocale()[0] or "").lower()
+        if sys.platform == "darwin" and not os.environ.get("LANG"):  # started from Finder: no LANG
+            loc = _apple_language() or loc
         for code, names in (("de", ("de", "german")), ("fr", ("fr", "french"))):
             if loc.startswith(names):
                 return code
         return "en"
+
+
+def _apple_language() -> str:
+    """First of the macOS preferred languages ('de' for ("de-DE", "en-US")), or "" when it cannot be read."""
+    try:
+        out = subprocess.run(["defaults", "read", "-g", "AppleLanguages"], capture_output=True, text=True,
+                             timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    m = re.search(r"[a-z]{2}", out or "", re.I)
+    return m.group().lower() if m else ""

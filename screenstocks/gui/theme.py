@@ -1,5 +1,6 @@
 """Dark theme shared by the dashboard and the setup wizard."""
 
+import sys
 import tkinter as tk
 from tkinter import ttk
 
@@ -25,18 +26,42 @@ THEME = {
     "font_small_bold": ("Segoe UI", 8, "bold"),
     "font_kpi": ("Segoe UI", 15, "bold"),
 }
+FONT_KEYS = ("font", "font_bold", "font_small", "font_small_bold", "font_kpi")
+_BASE_FONTS = {k: THEME[k] for k in FONT_KEYS}
+_family = "Segoe UI"
+
+
+def font(size: int, *style: str) -> tuple:
+    """A font in the UI family: Segoe UI on Windows, the system UI font elsewhere (macOS Tk counts 72 dpi
+    points, so its sizes are scaled to look like Windows)."""
+    return (_family, round(size * 4 / 3) if sys.platform == "darwin" else size, *style)
+
+
+def _native_fonts(root: tk.Misc) -> None:
+    global _family
+    if sys.platform == "win32":
+        return
+    from tkinter import font as tkfont
+    _family = tkfont.nametofont("TkDefaultFont", root=root).actual("family")
+    for key, (_, size, *style) in _BASE_FONTS.items():
+        THEME[key] = font(size, *style)
 
 
 def set_window_icon(win: tk.Misc) -> None:
-    icon = resource_path("assets/icon.ico")
+    icon = resource_path("assets/icon.ico" if sys.platform == "win32" else "assets/icon.png")
     if icon.exists():
         try:
-            win.iconbitmap(default=str(icon))
+            if sys.platform == "win32":
+                win.iconbitmap(default=str(icon))
+            else:  # .ico works only on Windows; keep the image referenced or Tk drops it
+                win._icon_image = tk.PhotoImage(master=win, file=str(icon))
+                win.iconphoto(True, win._icon_image)
         except tk.TclError:
             pass
 
 
 def apply_style(root: tk.Tk) -> None:
+    _native_fonts(root)
     s = ttk.Style(root)
     s.theme_use("clam")
     bg, panel, fg, muted = THEME["bg"], THEME["panel"], THEME["fg"], THEME["muted"]
@@ -48,19 +73,19 @@ def apply_style(root: tk.Tk) -> None:
     s.configure("Card.TFrame", background=alt)
     s.configure("Panel.TLabel", background=panel, foreground=muted)
     s.configure("Muted.TLabel", background=panel, foreground=muted)
-    s.configure("Title.TLabel", background=panel, foreground=fg, font=("Segoe UI", 13, "bold"))
-    s.configure("Heading.TLabel", background=panel, foreground=fg, font=("Segoe UI", 16, "bold"))
+    s.configure("Title.TLabel", background=panel, foreground=fg, font=font(13, "bold"))
+    s.configure("Heading.TLabel", background=panel, foreground=fg, font=font(16, "bold"))
     s.configure("Section.TLabel", background=panel, foreground=fg, font=THEME["font_bold"])
     s.configure("Body.TLabel", background=panel, foreground=fg)
     s.configure("Ok.TLabel", background=panel, foreground=THEME["up"])
     s.configure("Warn.TLabel", background=panel, foreground=THEME["warn"])
     s.configure("Bad.TLabel", background=panel, foreground=THEME["down"])
     s.configure("HeaderMuted.TLabel", background=bg, foreground=muted, font=THEME["font_small"])
-    s.configure("HeaderValue.TLabel", background=bg, foreground=fg, font=("Segoe UI", 12, "bold"))
-    s.configure("HeaderLive.TLabel", background=bg, foreground=THEME["up"], font=("Segoe UI", 12, "bold"))
-    s.configure("HeaderWarn.TLabel", background=bg, foreground=THEME["warn"], font=("Segoe UI", 12, "bold"))
+    s.configure("HeaderValue.TLabel", background=bg, foreground=fg, font=font(12, "bold"))
+    s.configure("HeaderLive.TLabel", background=bg, foreground=THEME["up"], font=font(12, "bold"))
+    s.configure("HeaderWarn.TLabel", background=bg, foreground=THEME["warn"], font=font(12, "bold"))
     s.configure("CardMuted.TLabel", background=alt, foreground=muted, font=THEME["font_small"])
-    s.configure("CardTitle.TLabel", background=alt, foreground=fg, font=("Segoe UI", 12, "bold"))
+    s.configure("CardTitle.TLabel", background=alt, foreground=fg, font=font(12, "bold"))
     s.configure("CardValue.TLabel", background=alt, foreground=fg, font=THEME["font_bold"])
     s.configure("Kpi.TLabel", background=alt, foreground=fg, font=THEME["font_kpi"])
     s.configure("KpiUp.TLabel", background=alt, foreground=THEME["up"], font=THEME["font_kpi"])
@@ -85,8 +110,8 @@ def apply_style(root: tk.Tk) -> None:
                 padding=(14, 4))
     s.map("Accent.TButton", background=[("active", "#79b8ff"), ("disabled", alt)],
           foreground=[("disabled", muted)])
-    for w, font in (("TRadiobutton", ("Segoe UI", 11)), ("TCheckbutton", THEME["font"])):
-        s.configure(w, background=panel, foreground=fg, font=font, indicatorbackground=alt,
+    for w, f in (("TRadiobutton", font(11)), ("TCheckbutton", THEME["font"])):
+        s.configure(w, background=panel, foreground=fg, font=f, indicatorbackground=alt,
                     indicatorforeground=fg, indicatorrelief="flat", upperbordercolor=THEME["grid_strong"],
                     lowerbordercolor=THEME["grid_strong"])
         s.map(w, background=[("active", panel)],

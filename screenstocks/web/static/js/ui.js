@@ -99,7 +99,7 @@
       <button class="btn reset-zoom hidden">↺ ${esc(t("chart.reset_zoom"))}</button><div class="empty hidden">${esc(t("common.no_data"))}</div>`;
     const chart = LW.createChart(el.querySelector(".lw"), {
       autoSize: true,
-      layout: { background: { type: "solid", color: "transparent" }, textColor: "#8b919a", fontFamily: "Segoe UI, sans-serif", fontSize: 11, attributionLogo: false },
+      layout: { background: { type: "solid", color: "transparent" }, textColor: "#8b919a", fontFamily: "Segoe UI, system-ui, sans-serif", fontSize: 11, attributionLogo: false },
       grid: { vertLines: { color: "#1c1f23" }, horzLines: { color: "#1c1f23" } },
       rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.15, bottom: 0.08 } },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: true, rightOffset: 4 },

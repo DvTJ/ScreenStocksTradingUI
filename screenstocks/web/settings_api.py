@@ -9,6 +9,7 @@ import importlib.metadata
 import logging
 import platform
 import sqlite3
+import sys
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -29,6 +30,16 @@ LIBRARIES = [
     ("TradingView Lightweight Charts™", None, "Apache-2.0", "https://github.com/tradingview/lightweight-charts"),
 ]
 CHARTS_VERSION = "5.2.1"     # vendored file in static/vendor
+# webview.renderer (set while the window runs) -> engine name shown under Settings -> About
+ENGINES = {"edgechromium": "Microsoft Edge WebView2", "wkwebview": "WebKit (WKWebView)",
+           "gtkwebkit2": "WebKitGTK", "qtwebengine": "Qt WebEngine", "qtwebkit": "Qt WebKit"}
+
+
+def _engine() -> str:
+    renderer = getattr(webview, "renderer", None)
+    if renderer:
+        return ENGINES.get(renderer, renderer)
+    return {"win32": "Microsoft Edge WebView2", "darwin": "WebKit (WKWebView)"}.get(sys.platform, "WebKitGTK / Qt WebEngine")
 
 
 def _dist_version(name: Optional[str]) -> Optional[str]:
@@ -46,20 +57,21 @@ class SettingsApi:
     def _save_dialog(self, directory: str, filename: str) -> Optional[str]:
         """Save dialog without the "replace existing file?" question: an existing database is
         opened, not overwritten (same as the classic dialog with confirmoverwrite=False)."""
-        try:
-            from webview.platforms.winforms import BrowserView, WinForms
-            owner = BrowserView.instances.get(self._window.uid)
-            dialog = WinForms.SaveFileDialog()
-            dialog.Filter = "SQLite (*.db)|*.db|* (*.*)|*.*"
-            dialog.InitialDirectory = directory
-            dialog.FileName = filename
-            dialog.OverwritePrompt = False
-            dialog.DefaultExt = "db"
-            if dialog.ShowDialog(owner) == WinForms.DialogResult.OK:
-                return str(dialog.FileName)
-            return None
-        except Exception:
-            log.exception("own save dialog failed - using the pywebview dialog")
+        if sys.platform == "win32":
+            try:
+                from webview.platforms.winforms import BrowserView, WinForms
+                owner = BrowserView.instances.get(self._window.uid)
+                dialog = WinForms.SaveFileDialog()
+                dialog.Filter = "SQLite (*.db)|*.db|* (*.*)|*.*"
+                dialog.InitialDirectory = directory
+                dialog.FileName = filename
+                dialog.OverwritePrompt = False
+                dialog.DefaultExt = "db"
+                if dialog.ShowDialog(owner) == WinForms.DialogResult.OK:
+                    return str(dialog.FileName)
+                return None
+            except Exception:
+                log.exception("own save dialog failed - using the pywebview dialog")
         result = self._window.create_file_dialog(webview.FileDialog.SAVE, directory=directory, save_filename=filename,
                                                  file_types=("SQLite (*.db)", "All files (*.*)"))
         return str(result[0] if isinstance(result, (tuple, list)) else result) if result else None
@@ -160,7 +172,7 @@ class SettingsApi:
         return {"ok": True, "prices": removed[0], "snaps": removed[1], "before": before, "after": after}
 
     def about(self) -> dict:
-        return {"version": __version__, "python": platform.python_version(),
+        return {"version": __version__, "python": platform.python_version(), "engine": _engine(),
                 "github": f"https://github.com/{config.GITHUB_REPO}",
                 "libraries": [dict(name=n, version=_dist_version(d), license=lic, url=url)
                               for n, d, lic, url in LIBRARIES]}

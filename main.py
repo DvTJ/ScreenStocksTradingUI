@@ -8,8 +8,10 @@
 import argparse
 import logging
 import multiprocessing
+import os
 import sqlite3
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -46,7 +48,13 @@ def main() -> int:
     ap.add_argument("--debug-ui", action="store_true", help="web UI with developer tools")
     ap.add_argument("--version", action="version", version=f"ScreenStocks Trading Bot {__version__}")
     ap.add_argument("-v", "--verbose", action="store_true")
+    # CI checks of a build: open the web UI and quit once it works (exit 0; 1 = page broken, 2 = page never
+    # loaded, 3 = web UI unavailable), and the Qt start check that webview_available runs in a child process
+    ap.add_argument("--smoke-test", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--probe-web", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
+    if args.probe_web:
+        return _probe_web()
 
     setup_logging(args.verbose)
     log = logging.getLogger("main")
@@ -61,8 +69,8 @@ def main() -> int:
             _show_message(t("app.already_running"))
         return 1
 
-    need_setup = not args.headless and (args.setup or not settings.setup_done)
-    ui = args.ui or settings.ui
+    need_setup = not args.headless and not args.smoke_test and (args.setup or not settings.setup_done)
+    ui = "web" if args.smoke_test else args.ui or settings.ui
     web_ok, web_reason = False, ""
     if not args.headless and ui == "web":
         from screenstocks.web import webview_available
@@ -93,10 +101,13 @@ def main() -> int:
         try:
             # the web UI shows the setup wizard itself and starts the backend when it is finished
             from screenstocks.web.app import run as run_web
-            run_web(start_backend, setup=need_setup, debug=args.debug_ui)
+            web_works = run_web(start_backend, setup=need_setup, debug=args.debug_ui, smoke=args.smoke_test)
             if backend:
                 backend["collector"].join(timeout=2)
-            return 0
+            code = 0 if web_works else 1
+            if sys.platform != "win32":
+                _leave_stuck_threads(log, code)
+            return code
         except Exception as exc:  # e.g. WebView2 failed to start
             web_reason = f"{type(exc).__name__}: {exc}"
             log.exception("web UI failed, falling back to the classic interface")
@@ -104,6 +115,8 @@ def main() -> int:
                 need_setup = False
     if ui == "web" and not args.headless:
         log.warning("web UI not available (%s) - starting the classic interface", web_reason)
+        if args.smoke_test:
+            return 3
         _show_web_fallback(web_reason)
 
     if need_setup:
@@ -145,6 +158,47 @@ def main() -> int:
     return 0
 
 
+def _leave_stuck_threads(log: logging.Logger, code: int) -> None:
+    """pywebview answers each page call on its own (non-daemon) thread through the GUI event loop. A call still
+    running when the window closed waits for that stopped loop forever (seen on macOS) and Python would never
+    exit - the app would keep its database lock. Recording and automation are stopped by now: give such threads
+    a moment, then leave without them."""
+    stuck = [th for th in threading.enumerate() if th is not threading.current_thread() and not th.daemon]
+    for th in stuck:
+        th.join(timeout=2)
+    stuck = [th.name for th in stuck if th.is_alive()]
+    if stuck:
+        log.warning("leaving %d stuck thread(s) behind: %s", len(stuck), ", ".join(stuck))
+        logging.shutdown()
+        os._exit(code)
+
+
+def _probe_web() -> int:
+    """Child process of webview_available (Linux, Qt backend): Qt either starts here or aborts this process.
+    The last stderr line is the reason shown to the user."""
+    try:
+        from qtpy.QtCore import Qt, QTimer
+        from qtpy.QtWebEngineWidgets import QWebEngineView   # before the QApplication exists
+        from qtpy.QtWidgets import QApplication
+    except Exception as exc:  # e.g. a missing system library: "libGL.so.1: cannot open shared object file"
+        print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    # render a tiny page off screen: platform plugin, OpenGL, GPU process and sandbox all have to work
+    app = QApplication(sys.argv[:1])
+    view = QWebEngineView()
+    view.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    loaded: list = []
+    view.loadFinished.connect(lambda ok: (loaded.append(ok), QTimer.singleShot(500, app.quit)))
+    QTimer.singleShot(60000, app.quit)
+    view.setHtml("<p>ScreenStocks</p>")
+    view.show()
+    app.exec()
+    if not any(loaded):
+        print("the web view did not show a page", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _database_failed(log: logging.Logger, exc: Exception, headless: bool) -> int:
     log.exception("database error")
     if not headless:
@@ -169,6 +223,12 @@ def _show_web_fallback(reason: str) -> None:
     from screenstocks.web import WEBVIEW2_DOWNLOAD, install_webview2
     root = tk.Tk()
     root.withdraw()
+    if sys.platform != "win32":  # WebView2 is Windows only; macOS / Linux just get the reason (and a hint)
+        key = ("web.fallback_info" if sys.platform == "darwin" else
+               "web.fallback_info_linux_app" if settings_mod.is_frozen() else "web.fallback_info_linux")
+        messagebox.showinfo(t("web.fallback_title"), t(key, reason=reason), parent=root)
+        root.destroy()
+        return
     if "WebView2" in reason and messagebox.askyesno(t("web.fallback_title"), t("web.webview2_ask"), parent=root):
         error = install_webview2()
         if not error:

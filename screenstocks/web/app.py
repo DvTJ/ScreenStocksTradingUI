@@ -1,6 +1,12 @@
 """Starts the web UI window."""
 
+import faulthandler
+import importlib.util
 import logging
+import os
+import sys
+import threading
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -11,6 +17,7 @@ from ..automation import AutomationEngine
 from ..collector import Collector
 from ..i18n import t
 from ..settings import resource_path
+from . import close_window
 from .bridge import Bridge
 
 log = logging.getLogger(__name__)
@@ -24,10 +31,36 @@ def static_dir() -> Path:
     return bundled if bundled.is_dir() else STATIC
 
 
+SMOKE_TIMEOUT_S = 90
+
+
+def _smoke_test(window, result: dict) -> None:
+    """--smoke-test (CI): wait until the page shows its tabs - the page, its scripts and the Python bridge (init)
+    work - then close the window. A page that never loads ends the process with exit code 2."""
+    def hung() -> None:            # show where it hangs, then fail
+        faulthandler.dump_traceback(all_threads=True)
+        os._exit(2)
+
+    watchdog = threading.Timer(SMOKE_TIMEOUT_S + 30, hung)
+    watchdog.daemon = True
+    watchdog.start()
+    deadline = time.monotonic() + SMOKE_TIMEOUT_S
+    while time.monotonic() < deadline and not result.get("tabs"):
+        try:
+            result["tabs"] = int(window.evaluate_js("document.querySelectorAll('#tabs button').length") or 0)
+        except Exception as exc:  # page not ready yet
+            log.debug("smoke test: %s", exc)
+        if not result.get("tabs"):
+            time.sleep(0.5)
+    log.info("smoke test: %s tabs, renderer %s", result.get("tabs", 0), getattr(webview, "renderer", None))
+    close_window(window)
+
+
 def run(start_backend: Callable[[], tuple[Collector, AutomationEngine, Path, Path]], setup: bool = False,
-        debug: bool = False) -> None:
+        debug: bool = False, smoke: bool = False) -> bool:
     """start_backend starts recording + automation and returns (collector, engine, db_path, export_dir).
-    With setup=True the window first shows the setup wizard and starts the backend when it is finished."""
+    With setup=True the window first shows the setup wizard and starts the backend when it is finished.
+    smoke=True closes the window again once the page works; the result says whether it did."""
     bridge = Bridge()
     bridge._backend_factory = start_backend
     if not setup:
@@ -38,6 +71,12 @@ def run(start_backend: Callable[[], tuple[Collector, AutomationEngine, Path, Pat
         width=1500, height=930, min_size=(900, 600), background_color="#0f1012", text_select=False)
     bridge._attach(window)
     window.events.closed += bridge._shutdown
-    icon = resource_path("assets/icon.ico")
-    webview.start(debug=debug, icon=str(icon) if icon.exists() else None)
+    icon = resource_path("assets/icon.ico" if sys.platform == "win32" else "assets/icon.png")  # GTK / Qt want a png
+    # Linux build without GTK bindings: Qt directly (pywebview would try GTK first and log a traceback)
+    gui = "qt" if sys.platform.startswith("linux") and importlib.util.find_spec("gi") is None else None
+    result: dict = {}
+    webview.start(_smoke_test if smoke else None, (window, result) if smoke else None,
+                  gui=gui, debug=debug, icon=str(icon) if icon.exists() else None)
+    log.info("web UI closed")
     bridge._shutdown()
+    return bool(result.get("tabs")) if smoke else True
