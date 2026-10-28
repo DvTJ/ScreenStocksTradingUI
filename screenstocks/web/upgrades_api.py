@@ -12,8 +12,6 @@ import time
 from pathlib import Path
 from typing import Optional
 
-import webview
-
 from .. import game_bridge, settings as settings_mod
 
 log = logging.getLogger(__name__)
@@ -151,6 +149,7 @@ class UpgradesApi:
 
     def upgrades_choose_game(self) -> dict:
         """Folder dialog for a game installed outside Steam's usual places."""
+        import webview                          # only here: the tests import this module without pywebview
         start = str(self._game_dir() or "")
         result = self._window.create_file_dialog(webview.FileDialog.FOLDER, directory=start)
         if not result:
