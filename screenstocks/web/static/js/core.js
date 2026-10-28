@@ -80,9 +80,12 @@ SS.fmt = {
   big(v) {
     if (v === null || v === undefined) return "–";
     const a = Math.abs(v);
-    const steps = SS.commaLang()                  // French uses the German abbreviations (as in gui/fmt.py)
-      ? [[1e12, " Bio."], [1e9, " Mrd."], [1e6, " Mio."], [1e4, " Tsd."]]
-      : [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e4, "K"]];
+    // from 10^15 on the American short scale in every language (Qa, Qi ...); below that French uses the German
+    // abbreviations (as in gui/fmt.py)
+    const us = [[1e33, "Dc"], [1e30, "No"], [1e27, "Oc"], [1e24, "Sp"], [1e21, "Sx"], [1e18, "Qi"], [1e15, "Qa"]];
+    const steps = SS.commaLang()
+      ? us.map(([v, s]) => [v, ` ${s}`]).concat([[1e12, " Bio."], [1e9, " Mrd."], [1e6, " Mio."], [1e4, " Tsd."]])
+      : us.concat([[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e4, "K"]]);
     for (const [lim, suffix] of steps) if (a >= lim) return SS.fmt.num(v / lim, 2) + suffix;
     return SS.fmt.num(v, 2);
   },

@@ -1,0 +1,27 @@
+/* Upgrades and Leaderboard tabs (optional game extension) */
+.lb { height: 100%; display: flex; flex-direction: column; gap: var(--gap); }
+.lb > .lb-top { flex: none; display: flex; align-items: center; gap: 12px; padding: 8px 12px; flex-wrap: wrap; }
+.lb .spacer { flex: 1; }
+.lb .lb-me { color: var(--fg); font-weight: 600; }
+.lb .hint { color: var(--dim); font-size: 11.5px; margin-top: 8px; }
+.ext-actions { display: flex; gap: 8px; margin-top: 12px; }
+.tbl tr.lb-self td { background: rgba(88, 166, 255, .12); }
+.tbl tr.lb-self td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+
+.upg { height: 100%; display: flex; flex-direction: column; gap: var(--gap); }
+.upg > .panel:first-child { flex: none; }
+.upg p { margin: 0 0 10px; line-height: 1.55; }
+.upg .notice { margin: 0 0 10px; }
+.upg .upg-lines { color: var(--muted); font-size: 12.5px; }
+.upg .box > h2 .spacer { flex: 1; }
+.upg .box > h2 .btn { padding: 2px 10px; font-size: 12px; }
+.upg .upg-desc { color: var(--dim); font-size: 11.5px; margin-top: 2px; white-space: normal; }
+.upg .btn.small { padding: 2px 10px; font-size: 12px; }
+.upg .hint { color: var(--dim); font-size: 11.5px; margin-top: 8px; line-height: 1.5; }
+
+/* Steam launch option (macOS, Proton) with a copy button */
+.ext-launch p { margin: 6px 0; line-height: 1.5; white-space: normal; }
+.ext-launch-line { display: flex; align-items: center; gap: 8px; }
+.ext-launch-line code { flex: 1; min-width: 0; overflow-wrap: anywhere; padding: 6px 8px; border-radius: 6px;
+  background: var(--bg2, rgba(127, 127, 127, .12)); font-size: 12px; user-select: all; }
+.ext-launch .btn.small { padding: 2px 10px; font-size: 12px; flex: none; }

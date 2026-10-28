@@ -18,6 +18,7 @@
   // ------------------------------------------------------------------ layout
   function mount(el) {
     S.el = el;
+    const hideExt = SS.info.extension ? "" : "hidden";     // upgrade purchases need the game extension
     const info = (k) => `<span class="bot-tip" tabindex="0" role="note" data-tip="${esc(t(`bot.d.${k}`))}">i</span>`;
     const adv = (k, step) => `<label>${esc(t(`bot.p.${k}`))} ${info(k)}</label>
       <input class="in num" type="text" inputmode="decimal" data-f="${k}" data-step="${step}"><span class="tag" data-tag="${k}"></span>`;
@@ -43,11 +44,15 @@
             <div class="field only-medium"><label>${esc(t("bot.max_positions"))} ${info("max_positions")}</label><input class="in num" type="number" min="1" max="10" data-f="max_positions"></div>
             <label class="switch only-medium"><input type="checkbox" data-f="shorts"><span class="track"></span>${esc(t("bot.shorts"))} ${info("shorts")}</label>
             <label class="switch only-medium"><input type="checkbox" data-f="trade_events"><span class="track"></span>${esc(t("bot.trade_events"))} ${info("trade_events")}</label>
+            <label class="switch ${hideExt}"><input type="checkbox" data-f="buy_upgrades"><span class="track"></span>${esc(t("bot.buy_upgrades"))} ${info("buy_upgrades")}
+              <span class="upg-state" data-role="upg-state"></span></label>
           </div>
           <details class="bot-adv only-advanced" data-role="adv"><summary>${esc(t("bot.advanced").replace(/^[▸▾]\s*/, ""))}</summary>
             <div class="padv">${PARAMS.map((k) => adv(k, STEP[k])).join("")}
               <label>${esc(t("bot.p.recalib_min"))} ${info("recalib_min")}</label><input class="in num" type="text" inputmode="numeric" data-f="recalib_min"><span></span>
-              <label>${esc(t("bot.p.loss_limit_pct"))} ${info("loss_limit_pct")}</label><input class="in num" type="text" inputmode="decimal" data-f="loss_limit_pct"><span></span></div>
+              <label>${esc(t("bot.p.loss_limit_pct"))} ${info("loss_limit_pct")}</label><input class="in num" type="text" inputmode="decimal" data-f="loss_limit_pct"><span></span>
+              ${["upgrade_payback_min", "upgrade_max_pct"].map((k) => `<label class="${hideExt}">${esc(t(`bot.p.${k}`))} ${info(k)}</label>
+                <input class="in num ${hideExt}" type="text" inputmode="decimal" data-f="${k}"><span class="${hideExt}"></span>`).join("")}</div>
             <button class="btn ghost" data-role="reset">${esc(t("bot.reset_auto"))}</button>
             <div style="margin-top:12px"><label>${esc(t("bot.stocks_traded"))}</label></div>
             <div class="stock-checks" data-role="stocks"></div>
@@ -150,6 +155,9 @@
       caution: f("caution").value, max_positions: parse(f("max_positions").value) ?? S.settings.max_positions,
       shorts: f("shorts").checked, trade_events: f("trade_events").checked, recalib_min: parse(f("recalib_min").value) ?? S.settings.recalib_min,
       loss_limit_pct: parse(f("loss_limit_pct").value) ?? S.settings.loss_limit_pct,
+      buy_upgrades: f("buy_upgrades").checked,
+      upgrade_payback_min: parse(f("upgrade_payback_min").value) ?? S.settings.upgrade_payback_min,
+      upgrade_max_pct: parse(f("upgrade_max_pct").value) ?? S.settings.upgrade_max_pct,
       excluded: [...S.el.querySelectorAll("[data-stock]")].filter((c) => !c.checked).map((c) => c.dataset.stock),
       overrides,
     };
@@ -181,6 +189,7 @@
     };
     set("enabled", s.enabled); set("paper", s.paper); set("level", s.level); set("trade_pct", s.trade_pct); set("caution", s.caution);
     set("max_positions", s.max_positions); set("shorts", s.shorts); set("trade_events", s.trade_events); set("recalib_min", s.recalib_min); set("loss_limit_pct", s.loss_limit_pct);
+    set("buy_upgrades", s.buy_upgrades); set("upgrade_payback_min", s.upgrade_payback_min); set("upgrade_max_pct", s.upgrade_max_pct);
     q(".bot").dataset.level = s.level;
     for (const k of PARAMS) {
       const manual = k in s.overrides;
@@ -334,6 +343,8 @@
     const badge = q('[data-role="state"]');
     badge.textContent = d.state.text;
     badge.className = "badge " + (d.state.tone === "ok" ? "ok" : d.state.tone === "warn" ? "" : "neutral");
+    const upg = q('[data-role="upg-state"]');            // why "buy upgrades" cannot work right now, if it cannot
+    upg.textContent = d.settings.buy_upgrades && d.upgrades ? d.upgrades : "";
 
     const r = d.results, k = S.kpis;
     k.set("gain", r.n ? money(r.gain) : "–", r.n ? cls(r.gain) : "");

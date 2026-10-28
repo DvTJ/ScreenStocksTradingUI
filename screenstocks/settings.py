@@ -114,6 +114,7 @@ class Settings:
     check_updates: bool = True
     ui: str = "web"                                    # "web" (default) or "classic" (Tkinter)
     stock_colors: dict = field(default_factory=dict)   # stock id -> "#rrggbb"
+    game_dir: str = ""                                 # game install folder (upgrade extension); "" = from Steam
 
     @property
     def export_path(self) -> Path:

@@ -24,6 +24,7 @@ from .events import EventTrader, load_settings as load_event_settings, reservati
 from .gui import fmt
 from .i18n import keys as text_keys, t, variants
 from .storage import Storage
+from .upgrade_buyer import UpgradeBuyer
 
 log = logging.getLogger(__name__)
 
@@ -254,6 +255,7 @@ class AutomationEngine(threading.Thread):
         self.state = "starting"                     # starting / active / paused / not_live
         self.events = EventTrader(writer)           # announced pumps / crashes (events.py)
         self.bot = BotTrader(writer)                # mean-reversion bot (bot.py)
+        self.upgrades = UpgradeBuyer(db_path)       # the bot's upgrade purchases (upgrade_buyer.py)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -341,8 +343,10 @@ class AutomationEngine(threading.Thread):
         ev_settings = load_event_settings(db)
         self.events.step(db, ev_settings, live, enabled, server_now, prices, positions, snap)
         try:
-            self.bot.step(db, load_bot_settings(db), live, enabled, now, server_now,
+            bot_settings = load_bot_settings(db)
+            self.bot.step(db, bot_settings, live, enabled, now, server_now,
                           {s["stock_id"]: s for s in db.stocks()}, positions, snap)
+            self.upgrades.step(bot_settings, live and enabled, self.bot.loss_limit_hit)
         except Exception:
             log.exception("bot error")                    # must not stop the rules below (stop-losses)
         if not rules:

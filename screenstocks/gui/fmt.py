@@ -36,14 +36,19 @@ def price(v: Optional[float]) -> str:
     return num(v, 2 if a >= 100 else 3 if a >= 1 else 4)
 
 
+# From 10^15 on every language uses the American short scale (Qa = quadrillion, Qi = quintillion ...);
+# below that German / French keep Tsd. / Mio. / Mrd. / Bio. Keep in step with SS.fmt.big in web/static/js/core.js.
+_US = ((1e33, "Dc"), (1e30, "No"), (1e27, "Oc"), (1e24, "Sp"), (1e21, "Sx"), (1e18, "Qi"), (1e15, "Qa"))
+BIG_EN = _US + ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e4, "K"))
+BIG_DE = tuple((v, " " + s) for v, s in _US) + ((1e12, " Bio."), (1e9, " Mrd."), (1e6, " Mio."), (1e4, " Tsd."))
+
+
 def big(v: Optional[float]) -> str:
-    """Compact money/share amounts: 6,34 Mrd. / 6,34 Md / 6.34B"""
+    """Compact money/share amounts: 6,34 Mrd. / 6.34B, up to 10^33 (Dc / Quintd.)"""
     if v is None:
         return "–"
     a = abs(v)
-    suffixes = ((1e12, " Bio."), (1e9, " Mrd."), (1e6, " Mio."), (1e4, " Tsd.")) if _de() else \
-        ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e4, "K"))
-    for limit, suffix in suffixes:
+    for limit, suffix in BIG_DE if _de() else BIG_EN:
         if a >= limit:
             return _localize(f"{v / limit:,.2f}") + suffix
     return num(v, 2)

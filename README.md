@@ -58,6 +58,26 @@ or GTK WebKit; if neither works, the classic interface starts.
   average win/loss, best/worst trade, P/L per stock and dividends received – for any time range.
 - **Statistics tab** – volatility per minute/hour, min/max/spread, time above/below the base price,
   base crossings and the average price move 1/5/15 minutes after high/low market news.
+- **Game extension** (optional, new interface) – the game's mod interface has no upgrades and no
+  leaderboard. A checkbox in the setup wizard (or **⚙ Settings → Extension** later) installs the third-party
+  [Screen Stocks Bridge](https://github.com/fuubox/screen-stocks-bridge) (a BepInEx plugin) into the game folder:
+  pinned versions of BepInEx and the bridge, checksums checked before anything is unpacked, the bridge's automatic
+  level claims and closing of the welcome-back screen switched off. **Remove extension** on the same settings page
+  takes everything out again (BepInEx only if this app installed it). Install and remove with the game closed.
+  On macOS (native game) and Linux (Proton) Steam has to start the game with BepInEx: after installing, the app
+  shows the line to paste into **Screen Stocks → Properties → General → Launch options** (macOS:
+  `"<game folder>/run_bepinex.sh" %command%`, Proton: `WINEDLLOVERRIDES="winhttp=n,b" %command%`) and checks
+  whether it is set. The app only reads Steam's settings, it never changes them. Delete the line again after
+  removing the extension; on macOS the game does not start while it is there.
+  Only while it is installed:
+  - **Upgrades tab** – level, effect and price of every upgrade; buys a level per click through the game's normal
+    purchase function (online the server checks it).
+  - **Leaderboard tab** – the game's rankings: around you, all time, IPO, top 100 and the two clan lists, your own
+    row highlighted. The game answers one leaderboard request per 30 seconds, so a list refreshes once a minute.
+  - **Buy upgrades itself** in the bot tab – the bot's permission to buy upgrades: it buys a level on its own when
+    it pays back within a set time (default 60 minutes) and fits an hourly budget (default 5 % of the cash); income
+    and dividend gain are valued from your income, cooldowns and volume from the bot's own measured profit. Off by
+    default, never in practice mode.
 - **Settings** (⚙) – language (applied immediately), interface, folders, database; a fixed colour per stock
   (palette or any colour); data maintenance; update check; About with the libraries and licences used.
 - **Keyboard** – **1–8** switch tabs, **Ctrl+,** opens the settings, **Esc** closes dialogs; in the market tab
@@ -251,6 +271,8 @@ tools/make_icon.py          generates assets/icon.ico
 | WebKit (WKWebView) | Apple | renders the interface on macOS (part of macOS) |
 | [PySide6](https://doc.qt.io/qtforpython-6/) | LGPL-3.0 | used by pywebview in the Linux build |
 | [Qt](https://www.qt.io/) incl. Qt WebEngine | LGPL-3.0 | renders the interface in the Linux build |
+| [BepInEx](https://github.com/BepInEx/BepInEx) | LGPL-2.1 | mod loader, downloaded only for the optional upgrade extension |
+| [Screen Stocks Bridge](https://github.com/fuubox/screen-stocks-bridge) | MIT-0 | upgrades, downloaded only for the optional upgrade extension |
 
 The charts use TradingView Lightweight Charts™, © TradingView, Inc. The TradingView logo is hidden in the
 charts; the attribution with a link to [tradingview.com](https://www.tradingview.com/) is shown under the

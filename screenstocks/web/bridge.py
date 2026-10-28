@@ -23,6 +23,7 @@ from .market import MarketApi
 from .analysis_api import AnalysisApi
 from .portfolio_api import PortfolioApi
 from .settings_api import SettingsApi
+from .upgrades_api import UpgradesApi
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ ALLOWED_LINKS = ("https://www.tradingview.com/", "https://github.com/", "https:/
                  "https://www.apache.org/", "https://www.python.org/")
 
 
-class Bridge(MarketApi, AutomationApi, BotApi, PortfolioApi, AnalysisApi, SettingsApi):
+class Bridge(MarketApi, AutomationApi, BotApi, PortfolioApi, AnalysisApi, SettingsApi, UpgradesApi):
     def __init__(self, collector: Optional[Collector] = None, engine: Optional[AutomationEngine] = None,
                  db_path: Optional[Path] = None, export_dir: Optional[Path] = None):
         self._collector = self._engine = self._db = self._slow_db = self._export_dir = None
@@ -62,6 +63,7 @@ class Bridge(MarketApi, AutomationApi, BotApi, PortfolioApi, AnalysisApi, Settin
         if self._closing:
             return
         self._closing = True        # page calls arriving from now on get empty answers
+        self._close_ext()
         if self._collector is None:  # window closed during the setup wizard
             return
         self._engine.stop()
@@ -97,7 +99,8 @@ class Bridge(MarketApi, AutomationApi, BotApi, PortfolioApi, AnalysisApi, Settin
             threading.Thread(target=self._check_updates, daemon=True).start()
         return {"lang": lang, "texts": texts(lang), "version": __version__, "colors": self._settings.stock_colors,
                 "frozen": settings_mod.is_frozen(), "ui": self._settings.ui,
-                "github": f"https://github.com/{config.GITHUB_REPO}"}
+                "github": f"https://github.com/{config.GITHUB_REPO}",
+                "extension": self.extension()["installed"]}      # the Upgrades and Leaderboard tabs
 
     # --------------------------------------------------------------------- tick
 

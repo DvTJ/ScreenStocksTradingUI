@@ -54,6 +54,27 @@ enthalten) oder GTK WebKit; funktioniert keins von beiden, startet die klassisch
   jeden Zeitraum.
 - **Tab Statistik** – Volatilität pro Minute/Stunde, Min/Max/Spanne, Zeit über/unter dem Basispreis,
   Kreuzungen der Basis und Ø Kursbewegung 1/5/15 Minuten nach Hoch-/Tief-Meldungen.
+- **Spiel-Erweiterung** (optional, neue Oberfläche) – die Mod-Schnittstelle des Spiels kennt weder
+  Upgrades noch Rangliste. Ein Häkchen im Einrichtungsassistenten (oder später **⚙ Einstellungen → Erweiterung**)
+  installiert die [Screen Stocks Bridge](https://github.com/fuubox/screen-stocks-bridge) eines anderen Entwicklers
+  (ein BepInEx-Plugin) in den Spielordner: feste Versionen von BepInEx und Bridge, Prüfsummen werden vor dem
+  Entpacken geprüft, das automatische Abholen von Level-Belohnungen und Schließen des Willkommen-zurück-Fensters der
+  Bridge ist aus. **Erweiterung entfernen** auf derselben Einstellungsseite nimmt alles wieder heraus (BepInEx nur,
+  wenn diese App es installiert hat). Installieren und Entfernen bei geschlossenem Spiel. Unter macOS (natives Spiel)
+  und Linux (Proton) muss Steam das Spiel mit BepInEx starten: Nach der Installation zeigt die App die Zeile für
+  **Screen Stocks → Eigenschaften → Allgemein → Startoptionen** (macOS: `"<Spielordner>/run_bepinex.sh" %command%`,
+  Proton: `WINEDLLOVERRIDES="winhttp=n,b" %command%`) und prüft, ob sie gesetzt ist. Die App liest die
+  Steam-Einstellungen nur, sie ändert sie nie. Nach dem Entfernen die Zeile wieder löschen; unter macOS startet das
+  Spiel sonst nicht. Nur solange die Erweiterung installiert ist:
+  - **Tab Upgrades** – Stufe, Wirkung und Preis jedes Upgrades; kauft pro Klick eine Stufe über die normale
+    Kauffunktion des Spiels (online prüft der Server).
+  - **Tab Rangliste** – die Ranglisten des Spiels: um dich herum, Allzeit, IPO, Top 100 und die beiden Clan-Listen,
+    deine eigene Zeile hervorgehoben. Das Spiel beantwortet eine Ranglisten-Anfrage pro 30 Sekunden, deshalb wird
+    eine Liste einmal pro Minute aktualisiert.
+  - **Upgrades selbst kaufen** im Bot-Tab – die Freigabe für den Bot: Er kauft eine Stufe selbst, wenn sie sich
+    innerhalb einer festgelegten Zeit bezahlt macht (Standard 60 Minuten) und ins Stundenbudget passt (Standard 5 %
+    des Cashs); Einkommen und Dividendenbonus bewertet er nach deinen Einnahmen, Cooldowns und Volumen nach seinem
+    eigenen gemessenen Gewinn. Standardmäßig aus, nie im Übungsmodus.
 - **Einstellungen** (⚙) – Sprache (sofort wirksam), Oberfläche, Ordner, Datenbank; feste Farbe je Aktie
   (Palette oder freie Farbe); Datenpflege; Update-Prüfung; „Über“ mit den verwendeten Bibliotheken und Lizenzen.
 - **Tastatur** – **1–8** wechseln die Tabs, **Strg+,** öffnet die Einstellungen, **Esc** schließt Dialoge; im
@@ -219,6 +240,8 @@ git push origin v1.0.0
 | WebKit (WKWebView) | Apple | stellt die Oberfläche unter macOS dar (Teil von macOS) |
 | [PySide6](https://doc.qt.io/qtforpython-6/) | LGPL-3.0 | von pywebview im Linux-Build genutzt |
 | [Qt](https://www.qt.io/) inkl. Qt WebEngine | LGPL-3.0 | stellt die Oberfläche im Linux-Build dar |
+| [BepInEx](https://github.com/BepInEx/BepInEx) | LGPL-2.1 | Mod-Lader, nur für die optionale Upgrade-Erweiterung heruntergeladen |
+| [Screen Stocks Bridge](https://github.com/fuubox/screen-stocks-bridge) | MIT-0 | Upgrades, nur für die optionale Upgrade-Erweiterung heruntergeladen |
 
 Die Charts verwenden TradingView Lightweight Charts™, © TradingView, Inc. Das TradingView-Logo ist in den Charts
 ausgeblendet; stattdessen stehen der Hinweis und ein Link zu [tradingview.com](https://www.tradingview.com/) unter

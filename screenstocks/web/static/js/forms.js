@@ -86,4 +86,69 @@
     if (onChange) el.onchange = (e) => onChange(e.target.value);
     return { get: () => (el.querySelector("input:checked") || {}).value };
   };
+
+  // ---------------------------------------------------------------- game extension (Upgrades, Leaderboard)
+
+  /** Text of an {error, detail} answer of the extension calls. */
+  forms.extError = (r) => {
+    const key = `upg.err.${r && r.error}`;
+    const text = SS.texts[key] !== undefined ? t(key) : t("upg.err.failed");
+    return r && r.detail ? `${text} (${r.detail})` : text;
+  };
+
+  forms.copy = async (text) => {
+    try { await navigator.clipboard.writeText(text); }
+    catch { const a = document.createElement("textarea"); a.value = text; document.body.appendChild(a); a.select(); document.execCommand("copy"); a.remove(); }
+    SS.toast(t("bot.copied"), "ok");
+  };
+
+  /** The Steam launch option the extension needs on macOS and under Proton: what to do, the line, a copy button. */
+  forms.launchBox = (ext, intro) => {
+    const box = document.createElement("div");
+    box.className = "ext-launch";
+    box.innerHTML = `<p>${esc(intro || t(ext.build === "macos" ? "upg.launch_macos" : "upg.launch_wine"))}</p>
+      <div class="ext-launch-line"><code class="mono">${esc(ext.launch_option)}</code>
+        <button class="btn ghost small">${esc(t("upg.copy"))}</button></div>`;
+    box.querySelector("button").onclick = () => forms.copy(ext.launch_option);
+    return box;
+  };
+
+  /** Install the extension; while the game runs, ask to close it and try again (or leave it for later).
+      Resolves true once it is installed. */
+  forms.installExtension = async () => {
+    for (;;) {
+      const r = await SS.call("upgrades_install");
+      if (r && r.ok) {
+        const ext = await SS.call("extension");
+        if (ext.launch_option && ext.launch_set !== true) {
+          await SS.dialog({ title: t("upg.launch_title"), body: forms.launchBox(ext),
+                            buttons: [{ label: "OK", value: true, kind: "primary" }] });
+        }
+        return true;
+      }
+      if (r && r.error === "game_running") {
+        const again = await SS.dialog({ title: t("upg.install"), body: t("upg.close_game"), buttons: [
+          { label: t("upg.later"), value: false, kind: "ghost" }, { label: t("upg.retry"), value: true, kind: "primary" }] });
+        if (again) continue;
+        return false;
+      }
+      await SS.dialog({ title: t("upg.install"), body: forms.extError(r), buttons: [{ label: "OK", value: true, kind: "primary" }] });
+      return false;
+    }
+  };
+
+  /** Remove the extension (the game has to be closed). Resolves true once it is gone. */
+  forms.removeExtension = async () => {
+    if (!(await SS.confirm(t("upg.remove"), t("upg.confirm_remove"), t("upg.remove"), "danger"))) return false;
+    const r = await SS.call("upgrades_remove");
+    if (r && r.ok) {
+      if (r.launch_option) {
+        await SS.dialog({ title: t("upg.remove"), buttons: [{ label: "OK", value: true, kind: "primary" }],
+                          body: forms.launchBox(r, t(r.build === "macos" ? "upg.removed_launch_macos" : "upg.removed_launch")) });
+      }
+      return true;
+    }
+    await SS.dialog({ title: t("upg.remove"), body: forms.extError(r), buttons: [{ label: "OK", value: true, kind: "primary" }] });
+    return false;
+  };
 })();

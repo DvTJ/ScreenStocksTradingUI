@@ -1,10 +1,10 @@
-/* Settings dialog: General, Colours, Data, Updates, About. */
+/* Settings dialog: General, Colours, Data, Extension (Windows), Updates, About. */
 "use strict";
 
 (() => {
   const { t, fmt, esc } = SS;
-  const PAGES = [["general", "settings.tab_general"], ["colors", "settings.tab_colors"], ["data", "settings.tab_data"],
-                 ["updates", "settings.tab_updates"], ["about", "settings.tab_about"]];
+  const ALL_PAGES = [["general", "settings.tab_general"], ["colors", "settings.tab_colors"], ["data", "settings.tab_data"],
+                     ["extension", "settings.tab_extension"], ["updates", "settings.tab_updates"], ["about", "settings.tab_about"]];
   const LOGO = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="11" width="3.6" height="8" rx="1" fill="#f85149"/>
     <rect x="7.2" y="6" width="3.6" height="11" rx="1" fill="#3fb950"/><rect x="12.9" y="9" width="3.6" height="6" rx="1" fill="#f85149"/>
     <rect x="18.6" y="3" width="3.6" height="10" rx="1" fill="#3fb950"/></svg>`;
@@ -13,7 +13,8 @@
   SS.openSettings = async (page = "general") => {
     if (open) return;
     open = true;
-    const cfg = await SS.call("settings_get");
+    const [cfg, ext] = await Promise.all([SS.call("settings_get"), SS.call("extension")]);
+    const PAGES = ALL_PAGES.filter(([id]) => id !== "extension" || ext.supported);
     const root = document.createElement("div");
     root.className = "sheet-backdrop";
     root.innerHTML = `
@@ -39,6 +40,7 @@
     const general = buildGeneral(pageEl("general"), cfg);
     const colors = buildColors(pageEl("colors"), cfg);
     buildData(pageEl("data"), cfg);
+    if (ext.supported) buildExtension(pageEl("extension"), ext, () => close());
     const updates = buildUpdates(pageEl("updates"), cfg);
     buildAbout(pageEl("about"));
     show(page);
@@ -164,6 +166,51 @@
       showInfo();
     };
     showInfo();
+  }
+
+  // ---------------------------------------------------------------- extension
+  // Installs / removes right away (not on Save); the page then reloads, which adds or drops the two tabs.
+  function buildExtension(el, ext, closeDialog) {
+    const line = (cls, text) => `<div class="${cls}">${esc(text)}</div>`;
+    let state = ext.installed ? line("ok", t("upg.installed_state", { version: ext.plugin_version || ext.bridge }))
+      : line("muted", t("upg.not_installed_state"));
+    if (ext.installed && !ext.ours) state += line("warn", t("upg.err.not_ours"));
+    if (ext.found && !ext.tested) state += line("warn", t("upg.untested"));
+    el.innerHTML = `
+      <div class="form-section"><h4>${esc(t("upg.title"))}</h4><p class="form-note">${esc(t("upg.intro"))}</p>
+        <div class="notice">${esc(t("upg.what", { bepinex: ext.bepinex, bridge: ext.bridge }))}<br>
+          <span class="link" data-url="${esc(ext.page)}">${esc(ext.page)}</span></div></div>
+      <div class="form-section"><h4>${esc(t("upg.game_dir"))}</h4>
+        <div class="mono">${esc(ext.found ? ext.game_dir : t("upg.no_game"))}</div>
+        <button class="btn ghost" data-role="choose" style="margin-top:6px">${esc(t("upg.choose_game"))}</button></div>
+      <div class="form-section"><div class="checks">${state}</div></div>
+      ${ext.installed && ext.launch_option ? `<div class="form-section" data-role="launch"><h4>${esc(t("upg.launch_title"))}</h4>
+        ${ext.launch_set === true ? line("ok", t("upg.launch_ok")) : ext.launch_set === false ? line("warn", t("upg.launch_missing")) : ""}</div>` : ""}
+      <div class="ext-actions">
+        ${ext.installed ? "" : `<button class="btn primary" data-role="install" ${ext.found ? "" : "disabled"}>${esc(t("upg.install"))}</button>`}
+        ${ext.installed && ext.ours ? `<button class="btn danger" data-role="remove">${esc(t("upg.remove"))}</button>` : ""}
+      </div>`;
+    el.querySelector("[data-url]").onclick = (e) => SS.call("open_url", e.target.dataset.url);
+    const launch = el.querySelector('[data-role="launch"]');
+    if (launch) launch.appendChild(SS.forms.launchBox(ext));
+    const done = (text) => { closeDialog(); SS.toast(text, "ok", 6000); setTimeout(() => location.reload(), 1200); };
+    el.querySelector('[data-role="choose"]').onclick = async () => {
+      const r = await SS.call("upgrades_choose_game");
+      if (r && r.error) SS.toast(SS.forms.extError(r), "err", 6000);
+      else if (r && r.ok) buildExtension(el, await SS.call("extension"), closeDialog);
+    };
+    const install = el.querySelector('[data-role="install"]');
+    if (install) {
+      install.onclick = async () => {
+        if (!(await SS.confirm(t("upg.install"), t("upg.confirm_install", { bepinex: ext.bepinex, bridge: ext.bridge }), t("upg.install")))) return;
+        install.disabled = true;
+        install.textContent = t("upg.installing");
+        if (await SS.forms.installExtension()) done(t("upg.installed"));
+        else buildExtension(el, await SS.call("extension"), closeDialog);
+      };
+    }
+    const remove = el.querySelector('[data-role="remove"]');
+    if (remove) remove.onclick = async () => { if (await SS.forms.removeExtension()) done(t("upg.removed")); };
   }
 
   // ---------------------------------------------------------------- updates

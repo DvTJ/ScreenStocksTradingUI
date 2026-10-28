@@ -11,19 +11,23 @@
     ["market", "tab.market", 1], ["compare", "tab.compare", 4], ["portfolio", "tab.portfolio", 3],
     ["dividends", "tab.dividends", 3], ["journal", "tab.journal", 3], ["stats", "tab.stats", 4],
     ["news", "tab.news", 4], ["automation", "tab.automation", 2], ["bot", "tab.bot", 7],
+    ["upgrades", "tab.upgrades", 0], ["leaderboard", "tab.leaderboard", 0],
   ];
+  const EXTENSION_TABS = new Set(["upgrades", "leaderboard"]);   // only while the game extension is installed
   const modules = SS.modules;   // filled by the tab scripts via SS.registerTab (core.js)
+  let tabs = TAB_ORDER;         // the tabs shown (without the extension ones while it is not installed)
   let active = "market";
   let lastTick = null;
 
   function buildTabs() {
     const nav = $("tabs"), views = $("views");
-    for (const [id, key, phase] of TAB_ORDER) {
+    tabs = TAB_ORDER.filter(([id]) => SS.info.extension || !EXTENSION_TABS.has(id));
+    for (const [id, key, phase] of tabs) {
       const b = document.createElement("button");
       b.dataset.tab = id;
       b.setAttribute("role", "tab");
       b.textContent = t(key).trim();
-      b.title = t("web.key_tab", { n: TAB_ORDER.findIndex((x) => x[0] === id) + 1 });
+      b.title = t("web.key_tab", { n: tabs.findIndex((x) => x[0] === id) + 1 });
       b.onclick = () => activate(id);
       nav.appendChild(b);
       const view = document.createElement("section");
@@ -135,9 +139,9 @@
     if ((e.ctrlKey || (IS_MAC && e.metaKey)) && !e.altKey && e.key === ",") { e.preventDefault(); SS.openSettings(); return; }
     if (e.ctrlKey || e.altKey || e.metaKey) return;
     const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);      // physical key: works on every layout
-    if (digit && !e.shiftKey && Number(digit[1]) <= TAB_ORDER.length) {
+    if (digit && !e.shiftKey && Number(digit[1]) <= tabs.length) {
       e.preventDefault();
-      activate(TAB_ORDER[Number(digit[1]) - 1][0]);
+      activate(tabs[Number(digit[1]) - 1][0]);
       return;
     }
     const m = modules[active];

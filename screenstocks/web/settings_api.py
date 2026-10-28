@@ -184,7 +184,8 @@ class SettingsApi:
         lang = s.language or get_language()
         set_language(lang)
         return {"lang": lang, "languages": LANGUAGES, "texts": texts(lang), "export_dir": str(s.export_path),
-                "db_path": str(s.db_file), "first_run": not s.setup_done, "version": __version__}
+                "db_path": str(s.db_file), "first_run": not s.setup_done, "version": __version__,
+                "extension": self.extension()}
 
     def wizard_language(self, lang: str) -> dict:
         if lang in LANGUAGES:

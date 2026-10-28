@@ -139,6 +139,9 @@ class BotSettings:
     recalib_min: int = 10        # advanced: minutes between calibrations
     loss_limit_pct: float = 3.0  # advanced: no new trades once the bot lost this % of the cash since activation (0 = off)
     overrides: dict = field(default_factory=dict)     # advanced: Params fields set by hand (else calibrated)
+    buy_upgrades: bool = False   # buy game upgrades that pay for themselves (upgrade extension, upgrade_buyer.py)
+    upgrade_payback_min: float = 60.0   # advanced: only upgrades that earn their price back within this many minutes
+    upgrade_max_pct: float = 5.0        # advanced: most all upgrade purchases of one hour may cost, in % of the cash
 
     def __post_init__(self):
         if self.level not in LEVELS:
@@ -149,6 +152,8 @@ class BotSettings:
         self.max_positions = min(10, max(1, int(self.max_positions)))
         self.recalib_min = min(240, max(1, int(self.recalib_min)))
         self.loss_limit_pct = min(100.0, max(0.0, float(self.loss_limit_pct)))
+        self.upgrade_payback_min = min(100000.0, max(1.0, float(self.upgrade_payback_min)))
+        self.upgrade_max_pct = min(100.0, max(0.01, float(self.upgrade_max_pct)))
         self.excluded = sorted({str(x) for x in self.excluded})
         defaults = Params()
         self.overrides = {k: type(getattr(defaults, k))(v) for k, v in dict(self.overrides).items()

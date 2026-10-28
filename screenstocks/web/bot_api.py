@@ -61,7 +61,16 @@ class BotApi:
             "thoughts": [dict(time=ms, sid=sid, msg=msg, code=code) for ms, sid, msg, code in reversed(tr.thoughts)][:150],
             "think_status": {"last_ms": tr.last_check_ms, "watching": tr.watching, "now_ms": int(time.time() * 1000)},
             "test": {"state": test.get("state", "idle"), "text": test.get("text", ""), "has_detail": bool(test.get("res"))},
+            "upgrades": self._upgrade_hint(),
         }
+
+    def _upgrade_hint(self) -> str:
+        """Why the bot cannot buy upgrades right now ("" when it can, or has not looked yet)."""
+        state = self._engine.upgrades.last.get("state")
+        if not state or state == "ok":
+            return ""
+        key = f"upg.err.{state}" if state != "no_extension" else "bot.upg.no_extension"
+        return t(key, default=t("upg.err.failed"))
 
     def bot_clear_history(self) -> dict:
         """Delete the trades of the current mode, the bot's journal and its thoughts (the UI asks first)."""
