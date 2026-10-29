@@ -18,7 +18,7 @@ from .reader import MarketSnapshot, PriceSample
 
 # Bump when SCHEMA or _migrate() gain something: a database below this version is prepared once
 # (tables, WAL mode, migrations); later opens do not write at all, so they never wait for a lock.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2            # 2: rules.repeat_times / repeat_wait_s / pause_until_ms (2.2.0 forgot the bump)
 BUSY_TIMEOUT_S = 30           # how long a connection waits for another one's write lock
 COMPACT_CHUNK = 20_000        # rows deleted per transaction when compacting (keeps the write lock short)
 
