@@ -81,6 +81,37 @@ def test_archive_cannot_escape_the_game_folder(game):
         gb._extract(_zip({"elsewhere.dll": b"x"}), game, ("BepInEx/plugins/",))
 
 
+def _windows_zip(files: dict) -> bytes:
+    """A zip as the bridge release is packed: "\\" in the names (ZipInfo would turn them into "/" on Windows)."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, data in files.items():
+            info = zipfile.ZipInfo("x")
+            info.filename = name
+            zf.writestr(info, data)
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("leftover", [False, True])
+def test_backslash_folder_entries(game, leftover):
+    """Issue 15: "BepInEx\\plugins\\" was written as an empty file on macOS / Linux (2.3.0 / 2.3.1 left it behind)."""
+    if leftover:
+        (game / "BepInEx").mkdir()
+        (game / "BepInEx" / "plugins").write_bytes(b"")
+    data = _windows_zip({"BepInEx\\plugins\\": b"", "BepInEx\\plugins\\ScreenStocksBridge\\ScreenStocksBridge.dll": b"plugin"})
+    assert gb._extract(data, game, ("BepInEx/plugins/",)) == ["BepInEx/plugins/ScreenStocksBridge/ScreenStocksBridge.dll"]
+    assert (game / "BepInEx" / "plugins").is_dir()
+    assert (game / "BepInEx" / "plugins" / "ScreenStocksBridge" / "ScreenStocksBridge.dll").read_bytes() == b"plugin"
+
+
+def test_a_real_file_in_the_way_is_not_deleted(game):
+    (game / "BepInEx").mkdir()
+    (game / "BepInEx" / "plugins").write_bytes(b"something")
+    with pytest.raises(gb.BridgeError) as err:
+        gb._extract(BRIDGE_ZIP, game, ("BepInEx/plugins/",))
+    assert err.value.code == "archive" and (game / "BepInEx" / "plugins").read_bytes() == b"something"
+
+
 def test_closed_game_and_foreign_install_are_refused(game, monkeypatch):
     with pytest.raises(gb.BridgeError) as err:
         gb.remove(game)

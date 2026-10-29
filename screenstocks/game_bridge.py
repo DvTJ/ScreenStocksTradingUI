@@ -338,6 +338,17 @@ def verify(pkg: Package, data: bytes) -> None:
         raise BridgeError("checksum", f"{pkg.name} {pkg.version}: checksum mismatch ({digest[:12]}…)")
 
 
+def _make_dir(root: Path, path: Path) -> None:
+    """mkdir -p below root. An empty file where a folder belongs is removed first: 2.3.0 / 2.3.1 left one named
+    BepInEx/plugins on macOS and Linux (issue 15), which broke every later install."""
+    for p in reversed([path, *path.parents]):
+        if p != root and root in p.parents and p.is_file():
+            if p.stat().st_size:
+                raise BridgeError("archive", f"a file is in the way: {p}")
+            p.unlink()
+    path.mkdir(parents=True, exist_ok=True)
+
+
 def _extract(data: bytes, game_dir: Path, allowed: tuple) -> list[str]:
     """Unpack a verified zip into the game folder; every entry must stay below one of the allowed paths."""
     written = []
@@ -350,10 +361,10 @@ def _extract(data: bytes, game_dir: Path, allowed: tuple) -> list[str]:
             target = (root / name).resolve()
             if root not in target.parents:
                 raise BridgeError("archive", f"unexpected file in archive: {name}")
-            if name.endswith("/"):
-                target.mkdir(parents=True, exist_ok=True)
+            if name.endswith("/"):      # not info.is_dir(): the bridge zip names its folders with "\" (issue 15)
+                _make_dir(root, target)
                 continue
-            target.parent.mkdir(parents=True, exist_ok=True)
+            _make_dir(root, target.parent)
             with zf.open(info) as src, open(target, "wb") as dst:
                 shutil.copyfileobj(src, dst)
             written.append(name)
