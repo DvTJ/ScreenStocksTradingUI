@@ -350,7 +350,7 @@ def _extract(data: bytes, game_dir: Path, allowed: tuple) -> list[str]:
             target = (root / name).resolve()
             if root not in target.parents:
                 raise BridgeError("archive", f"unexpected file in archive: {name}")
-            if info.is_dir():
+            if name.endswith("/"):
                 target.mkdir(parents=True, exist_ok=True)
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
