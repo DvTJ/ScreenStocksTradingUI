@@ -14,7 +14,10 @@ Pump:  after the announcement sell the other long positions (cash for the pump) 
 Crash: N minutes before: sell the long position and open a short -> a minute before
        sell the other long positions (cash for the buy-back) -> cover and buy back
        close to the announced target, or once the price rises X % from the low
-       (emergency N s after the scheduled time).
+       (emergency N s after the scheduled time) -> hold the bought-back shares and sell them
+       once the price has recovered most of the way, on a stop-loss or after a maximum time.
+       Never covered or bought back on a jump far above the price before the crash; bought
+       back only well below that price, and sold again at once when the real fill is not.
 
 The events take precedence: reservations() tells the rules and the bot which stocks
 the event trader owns and which of the game's buy / short cooldowns (shared by all
@@ -27,10 +30,11 @@ database, so the log and the UI can show it and a restart does not repeat steps.
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 from .commands import ACTIONS, CommandWriter, action_name, reason_text, status_text
+from .gui import fmt
 from .i18n import t
 from .storage import Storage
 
@@ -43,6 +47,13 @@ CD_MARGIN_S = 5                       # reserve a cooldown this much earlier tha
 PUMP_FUND_STOP_S = 10                 # pump: stop selling other positions this long before and buy with what is there
 CRASH_FUND_S = 60                     # crash: sell the other long positions this long before the scheduled time
 FUND_SPREAD = 1.02                    # cash needed for a buy: price x shares plus the buy spread (~0.9 %), rounded up
+# A crash can also make the price jump far above where it started for a second or two ($IDXA: 18.67 -> 229 -> 950
+# -> 35 within 20 s). That is no rebound: no cover or buy-back while the price is above CRASH_SPIKE x the price before
+# the crash, at the latest crash_safety_s + CRASH_SPIKE_WAIT_S after the scheduled time the short is covered anyway.
+CRASH_SPIKE = 1.5
+CRASH_SPIKE_WAIT_S = 300
+REBUY_FILL_WAIT_S = 10                # crash: how long the bought-back position may take to show up in the game data
+HOLD_STOP_CONFIRM_S = 5               # crash: the hold's stop-loss must last this long (no sale on a one-second dip)
 
 
 @dataclass
@@ -64,6 +75,16 @@ class EventSettings:
     crash_rise_pct: float = 50.0      # cover + buy back once the price rose this much from the low
     crash_safety_s: int = 120         # cover + buy back at the latest this long after the scheduled time
     crash_rebuy_pct: int = 100        # 0 = do not buy back
+    crash_rebuy_margin_pct: float = 10.0   # buy back only this far below the price before the crash (room to recover)
+    crash_hold_stop_pct: float = 15.0      # sell the bought-back shares this far below their fill
+    crash_hold_target_share: float = 90.0  # ... once the price is back this share of the way from the fill to the start
+    crash_hold_max_min: int = 45           # ... at the latest this long after the buy-back
+    excluded: list = field(default_factory=list)      # stocks whose events are not traded
+
+    def __post_init__(self):
+        self.excluded = sorted({str(x) for x in self.excluded or ()})
+        # storage.active_events keeps a held crash for 2 hours: the hold has to end well before
+        self.crash_hold_max_min = min(90, max(1, int(self.crash_hold_max_min)))
 
 
 def load_settings(db: Storage) -> EventSettings:
@@ -80,7 +101,8 @@ def save_settings(db: Storage, settings: EventSettings) -> None:
 
 # Phases. A phase ending in "!" waits for the game's answer to a command.
 PUMP_FLOW = ("wait_buy", "buy!", "hold", "sell!", "short_wait", "short!", "short_open", "cover!", "done")
-CRASH_FLOW = ("wait_pre", "sell!", "short_wait", "short!", "wait_crash", "cover!", "rebuy_wait", "rebuy!", "done")
+CRASH_FLOW = ("wait_pre", "sell!", "short_wait", "short!", "wait_crash", "cover!", "rebuy_wait", "rebuy!", "rebuy_check",
+              "rebuy_hold", "hold_sell!", "done")
 FINAL = ("done", "skipped", "failed")
 # Phases in which the event trader still has to buy / short (the command not sent yet).
 PUMP_BUY, PUMP_SHORT = ("wait_buy",), ("wait_buy", "buy!", "hold", "sell!", "short_wait")
@@ -88,7 +110,10 @@ CRASH_SHORT = ("wait_pre", "sell!", "short_wait")
 CRASH_BUY = ("wait_pre", "sell!", "short_wait", "short!", "wait_crash", "cover!", "rebuy_wait")
 
 
-def switched_on(s: EventSettings, kind: str) -> bool:
+def switched_on(s: EventSettings, kind: str, stock_id: str = "") -> bool:
+    """Whether the event trader trades events of this kind (on this stock: an excluded one counts as switched off)."""
+    if stock_id in s.excluded:
+        return False
     return s.pumps if kind == "pump" else s.crashes if kind == "crash" else False
 
 
@@ -101,7 +126,7 @@ def reservations(db: Storage, s: EventSettings, now: int, snap: Optional[dict] =
     owned, reserved = {}, {}
     for ev in db.active_events(now):
         kind, phase, sched = ev["direction"], ev["phase"], ev["scheduled_ms"]
-        if phase in FINAL or not switched_on(s, kind):
+        if phase in FINAL or not switched_on(s, kind, ev["stock_id"]):
             continue
         if kind == "pump":                  # announced about a minute ahead: everything starts at once
             owned[ev["stock_id"]] = ev
@@ -218,7 +243,7 @@ class EventTrader:
                 continue
             if ev["occurrence_id"] in self._pending:
                 pass  # always finish a command already in flight
-            elif not (enabled and live and switched_on(s, kind)):
+            elif not (enabled and live and switched_on(s, kind, ev["stock_id"])):
                 continue
             price = prices.get(ev["stock_id"])
             if price is None:
@@ -228,6 +253,46 @@ class EventTrader:
                 (self._pump if kind == "pump" else self._crash)(db, s, ev, now, price, pos, snap)
             except Exception:
                 log.exception("event step failed")
+
+    @staticmethod
+    def _memo(ev: dict) -> dict:
+        """Crash: what the event trader remembers about its trades (JSON in the info column)."""
+        try:
+            m = json.loads(ev["info"] or "{}")
+        except (ValueError, TypeError):
+            return {}
+        return m if isinstance(m, dict) else {}
+
+    def _remember(self, db: Storage, ev: dict, **values) -> dict:
+        ev["info"] = json.dumps({**self._memo(ev), **values})
+        db.save_event_state(ev)
+        return self._memo(ev)
+
+    def _once(self, db: Storage, ev: dict, flag: str, msg: str) -> None:
+        """Log msg once per event (flag remembered)."""
+        if self._memo(ev).get("flag") != flag:
+            self._remember(db, ev, flag=flag)
+            self._log(db, ev, msg)
+
+    def _spike(self, db: Storage, ev: dict, price: float) -> bool:
+        """Crash: the price is far above where it was before the crash - a jump of a second, no rebound. Logged once."""
+        start = ev["start_price"]
+        if not start or price <= start * CRASH_SPIKE:
+            return False
+        self._once(db, ev, "spike", t("event.log.spike", price=f"{price:.4g}", start=f"{start:.4g}"))
+        return True
+
+    def _finish(self, db: Storage, ev: dict) -> None:
+        """Crash done: log what the short and the buy-back made (estimated from the game's average prices and the
+        prices the closing orders were sent at)."""
+        self._set(db, ev, "done")
+        m = self._memo(ev)
+        short = m["short_shares"] * (m["short_avg"] - m["cover_price"]) if m.get("short_avg") and m.get("cover_price") else None
+        rebuy = m["shares"] * (m["sell_price"] - m["fill"]) if m.get("fill") and m.get("sell_price") else None
+        if short is None and rebuy is None:
+            return
+        sig = lambda v: "–" if v is None else ("+" if v >= 0 else "-") + fmt.big(abs(v))     # noqa: E731
+        self._log(db, ev, t("event.log.result", short=sig(short), rebuy=sig(rebuy), total=sig((short or 0) + (rebuy or 0))))
 
     @staticmethod
     def _cooldown_free(snap: dict, action: str, now: int) -> bool:
@@ -312,9 +377,19 @@ class EventTrader:
             elif phase == "short!":
                 self._set(db, ev, "wait_crash")
             elif phase == "cover!":
-                self._set(db, ev, "rebuy_wait" if s.crash_rebuy_pct else "done")
+                if s.crash_rebuy_pct:
+                    self._set(db, ev, "rebuy_wait")
+                else:
+                    self._finish(db, ev)
             elif phase == "rebuy!":
-                self._set(db, ev, "done" if res == "done" else "rebuy_wait")
+                if res == "done":
+                    self._remember(db, ev, bought_ms=now)
+                self._set(db, ev, "rebuy_check" if res == "done" else "rebuy_wait")
+            elif phase == "hold_sell!":
+                if res == "done":
+                    self._finish(db, ev)
+                else:
+                    self._set(db, ev, "rebuy_hold")         # sells have no cooldown: try again next step
             return
 
         pre_start = sched - s.crash_minutes * 60_000
@@ -348,17 +423,71 @@ class EventTrader:
             low = min(ev["extreme"] or price, price)
             if low != ev["extreme"]:
                 self._set(db, ev, "wait_crash", extreme=low)
+            if self._spike(db, ev, price) and now < sched + (s.crash_safety_s + CRASH_SPIKE_WAIT_S) * 1000:
+                return
             rise = price >= low * (1 + s.crash_rise_pct / 100)
             if at_target or rise or now >= sched + s.crash_safety_s * 1000:
                 self._log(db, ev, t("event.log.near_target", price=f"{price:.4g}", target=f"{target:.4g}") if at_target
                           else t("event.log.low_rise", low=f"{low:.4g}", price=f"{price:.4g}") if rise
                           else t("event.log.safety"))
                 if pos.get("shares_shorted"):
+                    self._remember(db, ev, short_shares=pos["shares_shorted"], short_avg=pos.get("avg_short_price") or 0,
+                                   cover_price=price)
                     self._send(db, ev, "cover", 100, "cover!")
+                elif s.crash_rebuy_pct:
+                    self._set(db, ev, "rebuy_wait")
                 else:
-                    self._set(db, ev, "rebuy_wait" if s.crash_rebuy_pct else "done")
+                    self._finish(db, ev)
         elif phase == "rebuy_wait":
-            if now >= sched + 10 * 60_000:
-                self._set(db, ev, "done")       # give up re-buying after 10 minutes
+            start = ev["start_price"]
+            limit = start * (1 - s.crash_rebuy_margin_pct / 100) if start else 0
+            if now >= sched + 10 * 60_000 or not start:
+                self._finish(db, ev)            # give up re-buying after 10 minutes (or without a price to compare)
+            elif price > limit:
+                # too close to (or above) where it started: the recovery left too little to win for the spread
+                self._once(db, ev, "high", t("event.log.rebuy_high", price=f"{price:.4g}", limit=f"{limit:.4g}",
+                                             start=f"{start:.4g}"))
             elif self._cooldown_free(snap, "buy", now):
                 self._send(db, ev, "buy", s.crash_rebuy_pct, "rebuy!")
+        elif phase == "rebuy_check":
+            # the real fill: the game's average price of the new position (it shows up a moment after the order)
+            m, start = self._memo(ev), ev["start_price"]
+            fill, shares = pos.get("avg_buy_price") or 0.0, pos.get("shares_owned") or 0.0
+            if not (fill and shares):
+                if now - m.get("bought_ms", now) >= REBUY_FILL_WAIT_S * 1000:
+                    self._log(db, ev, t("event.log.rebuy_no_position"))
+                    self._finish(db, ev)
+                return
+            self._remember(db, ev, fill=fill, shares=shares, since_ms=now)
+            accept = start * (1 - s.crash_rebuy_margin_pct / 200)        # half the margin is fill tolerance
+            if fill > accept:
+                self._log(db, ev, t("event.log.rebuy_fill_high", fill=f"{fill:.4g}", limit=f"{accept:.4g}"))
+                self._remember(db, ev, sell_price=price)
+                self._send(db, ev, "sell", 100, "hold_sell!")
+            else:
+                self._log(db, ev, t("event.log.rebuy_hold", fill=f"{fill:.4g}", start=f"{start:.4g}"))
+                self._set(db, ev, "rebuy_hold")
+        elif phase == "rebuy_hold":
+            m = self._memo(ev)
+            if not pos.get("shares_owned"):
+                self._finish(db, ev)            # sold outside the event trader
+                return
+            fill, start = m["fill"], ev["start_price"]
+            target = fill + (start - fill) * s.crash_hold_target_share / 100
+            stop = fill * (1 - s.crash_hold_stop_pct / 100)
+            reason = None
+            if price >= target:
+                reason = t("event.log.hold_target", price=f"{price:.4g}", target=f"{target:.4g}")
+            elif price <= stop:
+                # a one-second dip is no reason to sell at the bottom (the noise is huge right after a crash)
+                since = m.get("stop_ms") or self._remember(db, ev, stop_ms=now)["stop_ms"]
+                if now - since >= HOLD_STOP_CONFIRM_S * 1000:
+                    reason = t("event.log.hold_stop", price=f"{price:.4g}", fill=f"{fill:.4g}")
+            elif now >= m["since_ms"] + s.crash_hold_max_min * 60_000:
+                reason = t("event.log.hold_timeout", min=f"{s.crash_hold_max_min:g}")
+            if price > stop and m.get("stop_ms"):
+                self._remember(db, ev, stop_ms=None)
+            if reason:
+                self._log(db, ev, reason)
+                self._remember(db, ev, sell_price=price)
+                self._send(db, ev, "sell", 100, "hold_sell!")

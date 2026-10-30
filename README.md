@@ -31,8 +31,11 @@ or GTK WebKit; if neither works, the classic interface starts.
 - **Announced events** – the game announces pumps (~1 min ahead) and crashes (hours ahead). With the switches
   in the Automation tab (off by default) the app buys after a pump announcement, sells close to the announced
   target (or on the pullback from the peak), shorts and covers near the starting price; before a crash it sells
-  and shorts N minutes ahead and covers and buys back close to the target (or on the rebound from the low).
-  Events take precedence: rules and the bot leave the event's stock alone and send no buy / short that would use
+  and shorts N minutes ahead and covers and buys back close to the target (or on the rebound from the low), then
+  holds the bought-back shares until the price has mostly recovered (stop-loss and maximum hold time). It does not
+  cover or buy back on a jump far above the price before the crash, buys back only well below that price and sells
+  again at once when the real fill is not; the journal shows each event's result. A stock list sets which stocks'
+  events it trades. Events take precedence: rules and the bot leave the event's stock alone and send no buy / short that would use
   the game's shared cooldown the event trader needs; stop-losses elsewhere keep working. With "Sell other
   positions for it" (on by default) the other long positions are sold so the pump buy and the crash buy-back get
   all the cash. All thresholds are adjustable.

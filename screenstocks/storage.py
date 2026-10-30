@@ -588,8 +588,10 @@ class Storage:
         return [dict(zip(self.EVENT_COLUMNS, r)) for r in rows]
 
     def active_events(self, now_ms: int) -> list[dict]:
-        """Announced events that are upcoming or happened in the last 15 minutes, with trading state."""
-        events = self._events("s.scheduled_ms >= ?", (now_ms - 15 * 60_000,))
+        """Announced events that are upcoming or happened in the last 15 minutes, with trading state - and crashes
+        whose bought-back shares the event trader still holds (up to 2 hours)."""
+        events = self._events("s.scheduled_ms >= ? OR (e.phase IN ('rebuy_check', 'rebuy_hold', 'hold_sell!') "
+                              "AND s.scheduled_ms >= ?)", (now_ms - 15 * 60_000, now_ms - 2 * 3600_000))
         for ev in events:
             if ev["phase"] is None:
                 ev["phase"] = "wait_buy" if ev["direction"] == "pump" else "wait_pre"

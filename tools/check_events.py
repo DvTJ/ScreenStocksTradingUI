@@ -27,26 +27,34 @@ class FakeGame:
 
     def __init__(self, db: Storage, cash: float, positions: dict):
         self.db, self.cash, self.now, self.n = db, cash, 0, 0
-        self.pos = {sid: {"shares_owned": float(sh), "shares_shorted": 0.0} for sid, sh in positions.items()}
+        self.pos = {sid: {"shares_owned": float(sh), "shares_shorted": 0.0, "avg_buy_price": 0.0, "avg_short_price": 0.0}
+                    for sid, sh in positions.items()}
         self.prices: dict = {}
+        self.fill: dict = {}                                   # (stock, action) -> fill price of the next such order
         self.cd = {"buy": 0, "short": 0}
         self.sent: list = []                                   # (time, stock, action, percent, price)
 
     def send(self, stock_id: str, action: str, percent: float) -> SentCommand:
-        pct, price = int(percent), self.prices[stock_id]
-        p = self.pos.setdefault(stock_id, {"shares_owned": 0.0, "shares_shorted": 0.0})
+        pct = int(percent)
+        price = self.fill.pop((stock_id, action), None) or self.prices[stock_id]     # the price may jump before the fill
+        p = self.pos.setdefault(stock_id, {"shares_owned": 0.0, "shares_shorted": 0.0, "avg_buy_price": 0.0,
+                                           "avg_short_price": 0.0})
         status = "done"
         if action in self.cd and self.cd[action] > self.now:
             status = "rejected"
         elif action == "buy":
-            p["shares_owned"] += self.cash * pct / 100 / price
+            n = self.cash * pct / 100 / price
+            p["avg_buy_price"] = (p["shares_owned"] * p["avg_buy_price"] + n * price) / (p["shares_owned"] + n)
+            p["shares_owned"] += n
             self.cash -= self.cash * pct / 100
             self.cd["buy"] = self.now + BUY_CD_S * 1000
         elif action == "sell":
             self.cash += p["shares_owned"] * pct / 100 * price
             p["shares_owned"] *= 1 - pct / 100
         elif action == "short":
-            p["shares_shorted"] += self.cash * pct / 100 / price
+            n = self.cash * pct / 100 / price
+            p["avg_short_price"] = (p["shares_shorted"] * p["avg_short_price"] + n * price) / (p["shares_shorted"] + n)
+            p["shares_shorted"] += n
             self.cd["short"] = self.now + SHORT_CD_S * 1000
         elif action == "cover":
             p["shares_shorted"] = 0.0
@@ -147,8 +155,11 @@ def check_crash():
     assert events.reservations(db, s, T - 3 * 3600_000, game.snap()) == ({}, {}), "hours ahead: nothing blocked"
     seen = play(db, game, s, prices_at, T - 20 * 60_000, T + 40 * 60_000)
     acts = [(sid, a) for _, sid, a, _, _ in game.sent]
-    assert acts == [("$PLAIN", "sell"), ("$PLAIN", "short"), ("$A", "sell"), ("$PLAIN", "cover"), ("$PLAIN", "buy")], acts
-    when = {(sid, a): (t_, price) for t_, sid, a, _, price in game.sent}
+    assert acts == [("$PLAIN", "sell"), ("$PLAIN", "short"), ("$A", "sell"), ("$PLAIN", "cover"), ("$PLAIN", "buy"),
+                    ("$PLAIN", "sell")], acts
+    when = {(sid, a): (t_, price) for t_, sid, a, _, price in game.sent[:-1]}
+    sold_back = game.sent[-1]
+    assert sold_back[4] >= 10.2 + (774 - 10.2) * 0.9, f"held until mostly recovered: {sold_back}"
     assert when[("$PLAIN", "sell")][0] == T - 15 * 60_000, "sell + short 15 min before"
     assert T - 61_000 <= when[("$A", "sell")][0] < T, "the other positions are sold in the last minute"
     assert when[("$PLAIN", "buy")][1] <= 10 * 1.05, f"bought back at the bottom: {when[('$PLAIN', 'buy')]}"
@@ -157,9 +168,95 @@ def check_crash():
     buy_from = next(t_ for t_, _, r in seen if "buy" in r)
     assert short_from == T - 15 * 60_000 - (SHORT_CD_S + events.CD_MARGIN_S) * 1000, short_from - T
     assert buy_from == T - (BUY_CD_S + events.CD_MARGIN_S) * 1000, buy_from - T
-    shares = game.pos["$PLAIN"]["shares_owned"]
-    print(f"crash: {acts}, bought back {shares:,.0f} shares at {when[('$PLAIN', 'buy')][1]:.2f}, "
-          f"worth {shares * 774:,.0f} recovered (from {1000 + 100 * 774 + 1000 * 50:,.0f})")
+    assert any("result" in m and "total +" in m for _, _, _, _, m in db.rule_log(50)), "the event's result is logged"
+    print(f"crash: {acts}, bought back at {when[('$PLAIN', 'buy')][1]:.2f}, sold at {sold_back[4]:.1f} after "
+          f"{(sold_back[0] - T) / 60_000:.0f} min, cash {game.cash:,.0f} (from {1000 + 100 * 774 + 1000 * 50:,.0f})")
+
+
+def check_crash_spike():
+    """$IDXA, 29.10.: at the crash the price jumped 18.67 -> 229 -> 950 -> 35 within 20 s. Before, the short was
+    covered at 229 (-511 %) and everything bought back at 950. Now both wait for the price to come back."""
+    T = 60_000_000
+    db, s = new_db(), events.EventSettings(crashes=True, fund_events=False)
+    path = {0: 18.67, 1: 229.3, 2: 950.0, 3: 908.4}
+
+    def prices_at(now):
+        dt = (now - T) // 1000
+        return {"$IDXA": 60.0 if dt < 0 else path.get(dt, 35.4 if dt < 20 else 45.0)}
+    add_stocks(db, prices_at(0))
+    announce(db, "$IDXA", "crash", 15.0, T, T - 3600_000)
+    game = FakeGame(db, cash=1000.0, positions={})
+    play(db, game, s, prices_at, T - 16 * 60_000, T + 50 * 60_000)
+    acts = [(a, price) for _, sid, a, _, price in game.sent]
+    assert [a for a, _ in acts] == ["short", "cover", "buy", "sell"], acts
+    assert all(price < 60 for a, price in acts if a in ("cover", "buy")), f"no cover / buy-back on the jump: {acts}"
+    bought, sold = game.sent[2][0], game.sent[3][0]
+    assert 0 <= sold - bought - s.crash_hold_max_min * 60_000 <= 3000, "no recovery to the target: sold after the maximum hold"
+    msgs = [m for *_, m in db.rule_log(50)]
+    assert any("229.3" in m for m in msgs), "the jump is logged"
+
+    # a jump that does not end: covered after crash_safety_s + CRASH_SPIKE_WAIT_S, never bought back above the start
+    db = new_db()
+    game = FakeGame(db, cash=1000.0, positions={})
+    add_stocks(db, {"$IDXA": 60.0})
+    announce(db, "$IDXA", "crash", 15.0, T, T - 3600_000)
+    play(db, game, s, lambda now: {"$IDXA": 60.0 if now < T else 200.0}, T - 16 * 60_000, T + 15 * 60_000)
+    cover = next(x for x in game.sent if x[2] == "cover")
+    assert cover[0] == T + (s.crash_safety_s + events.CRASH_SPIKE_WAIT_S) * 1000, (cover[0] - T) / 1000
+    assert not any(x[2] == "buy" for x in game.sent), "no buy-back above the price before the crash"
+    print(f"crash spike: {acts}")
+
+
+def crash_run(prices_after, fill=None, minutes=20):
+    """A crash at T on $X (60 before it, target 15) with prices_after(seconds after T); fill = a different fill price
+    for the buy-back. Returns (game, log messages)."""
+    T = 80_000_000
+    db, s = new_db(), events.EventSettings(crashes=True, fund_events=False)
+    add_stocks(db, {"$X": 60.0})
+    announce(db, "$X", "crash", 15.0, T, T - 3600_000)
+    game = FakeGame(db, cash=1000.0, positions={})
+    if fill:
+        game.fill[("$X", "buy")] = fill
+    play(db, game, s, lambda now: {"$X": 60.0 if now < T else prices_after((now - T) // 1000)}, T - 16 * 60_000,
+         T + minutes * 60_000)
+    return game, [m for *_, m in db.rule_log(100)], db
+
+
+def check_rebuy_checks():
+    # 1. the real fill: signal at 15, but the game fills at 58 (a jump in between) -> sold again at once
+    game, msgs, _ = crash_run(lambda dt: 15.0 if dt < 3 else 40.0, fill=58.0)
+    acts = [(a, p) for _, _, a, _, p in game.sent]
+    assert [a for a, _ in acts] == ["short", "cover", "buy", "sell"] and game.sent[3][0] - game.sent[2][0] <= 2000, acts
+    assert any("58" in m and "57" in m for m in msgs), "the fill above the accepted price is logged"
+    # 2. not enough room left: the price is back at 56 (only 7 % under the 60 before it, margin 10 %) -> no buy-back
+    game, msgs, _ = crash_run(lambda dt: 15.0 if dt < 1 else 56.0)
+    assert [a for _, _, a, _, _ in game.sent] == ["short", "cover"], game.sent
+    assert any("56" in m and "54" in m for m in msgs), "the skipped buy-back is logged"
+    # 3. the hold's stop-loss: a 2 s dip is ignored, a lasting fall below fill - 15 % sells
+    game, msgs, db = crash_run(lambda dt: 15.0 if dt < 5 else 12.0 if 100 <= dt < 102 else 11.0 if dt >= 200 else 16.0)
+    sells = [(t_, p) for t_, _, a, _, p in game.sent if a == "sell"]
+    assert len(sells) == 1 and sells[0][1] == 11.0, f"no sale on the dip, one on the lasting fall: {game.sent}"
+    assert db.active_events(80_000_000)[0]["phase"] == "done"
+    assert any("result" in m for m in msgs), "the result is logged"
+    print(f"rebuy checks: fill jump sold at once, no buy-back at 56, stop-loss at 11 after the buy at 15 - {msgs[0]}")
+
+
+def check_excluded():
+    T = 70_000_000
+    db = new_db()
+    s = events.EventSettings(pumps=True, crashes=True, excluded=["$IDXA", "$IDXA"])
+    assert s.excluded == ["$IDXA"]
+    add_stocks(db, {"$IDXA": 60.0, "$PLAIN": 700.0})
+    announce(db, "$IDXA", "crash", 15.0, T, T - 3600_000)
+    db.conn.execute("INSERT INTO scheduled_news VALUES (?,?,?,?,?,?)", ("crash2", "$PLAIN", "crash", 10.0, T, T - 3600_000))
+    db.conn.commit()
+    game = FakeGame(db, cash=1000.0, positions={})
+    play(db, game, s, lambda now: {"$IDXA": 60.0, "$PLAIN": 700.0 if now < T else 10.0}, T - 16 * 60_000, T + 60_000)
+    assert {sid for _, sid, *_ in game.sent} == {"$PLAIN"}, game.sent
+    owned, _ = events.reservations(db, s, T - 60_000, game.snap())
+    assert "$IDXA" not in owned, "an excluded stock is not reserved for the event trader"
+    db.set_setting(events.SETTINGS_KEY, json.dumps({"crashes": True, "excluded": ["$IDXA"]}))
+    assert events.load_settings(db).excluded == ["$IDXA"]
 
 
 def check_rules_yield():
@@ -280,6 +377,9 @@ if __name__ == "__main__":
     check_trailing_zone()
     check_pump()
     check_crash()
+    check_crash_spike()
+    check_rebuy_checks()
+    check_excluded()
     check_rules_yield()
     check_repeat_rounds()
     print("ok")

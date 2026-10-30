@@ -105,6 +105,7 @@
     "upg.copy": "Copy", "bot.copied": "Copied to the clipboard",
     "tab.upgrades": "  Upgrades  ",
     "tab.bot": "  Bot (experimental)  ",
+    "event.stocks": "Stocks", "event.stocks_hint": "Events of unticked stocks are not traded.",
   };
   // market tab: one stock with a smooth fake price per second, a trade marker, a price line and an event
   const off = -new Date().getTimezoneOffset() * 60;
@@ -124,6 +125,10 @@
   });
   // ?mock&mac: the macOS build, whose launch option is not set in Steam yet
   const mac = location.search.includes("mac");
+  const evSettings = { pumps: true, crashes: true, fund_events: true, pump_buy_pct: 100, pump_drop_pct: 10, pump_start_share: 50,
+    pump_target_share: 85, pump_safety_s: 30, pump_short_pct: 100, pump_cover_pct: 20, pump_cover_max_s: 120, crash_minutes: 15,
+    crash_short_pct: 100, crash_target_pct: 5, crash_rise_pct: 50, crash_safety_s: 120, crash_rebuy_pct: 100, crash_rebuy_margin_pct: 10, crash_hold_stop_pct: 15,
+    crash_hold_target_share: 90, crash_hold_max_min: 45, excluded: ["$IDXA"] };
   const launch = mac ? { build: "macos", launch_option: '"/Users/me/Library/Application Support/Steam/steamapps/common/Screen Stocks/run_bepinex.sh" %command%', launch_set: false }
     : { build: "windows", launch_option: "", launch_set: true };
   window.pywebview = {
@@ -174,6 +179,18 @@
       db_exists: async () => true,
       upgrades_install: async () => ({ ok: true }), upgrades_remove: async () => ({ ok: true, build: launch.build, launch_option: launch.launch_option }),
       upgrades_buy: async () => ({ error: "purchase_rejected" }), upgrades_choose_game: async () => ({}),
+      // automation tab: no rules, two announced crashes, the event settings kept in memory
+      automation: async () => ({
+        master: true, engine: "active", rules: [], log: [], now: Date.now(),
+        stocks: ["$BANK", "$IDXA", "$PLAIN", "$PUMP"], prices: { $BANK: 12, $IDXA: 60, $PLAIN: 774, $PUMP: 9 },
+        event_settings: { ...evSettings },
+        events: ["$IDXA", "$PLAIN"].map((sid, i) => ({ id: `crash${i}`, stock: sid, direction: "crash", direction_text: "Crash",
+          target: 15, at: start + (i + 1) * 3600_000, future: true, phase: "wait_pre",
+          phase_text: evSettings.excluded.includes(sid) ? "off" : "waiting" })),
+        kinds: { buy_limit: "Limit buy" }, sides: { long: "Long" }, modes: { price: "Price" }, exit_kinds: [], trailing_entry: [],
+      }),
+      save_events: async (values) => Object.assign(evSettings, values, { excluded: [...new Set(values.excluded ?? evSettings.excluded)].sort() }),
+      rule_preview: async () => ({ help: [] }), set_master: async () => {},
     },
   };
 })();

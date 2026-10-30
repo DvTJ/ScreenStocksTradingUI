@@ -18,7 +18,8 @@ from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, Automatio
                           status_display, status_msg, trigger_price, TRAILING_ENTRY, activation_op,
                           activation_reached, round_help)
 from ..collector import Collector, CollectorStatus
-from ..events import EventSettings, load_settings as load_event_settings, save_settings as save_event_settings
+from ..events import (EventSettings, load_settings as load_event_settings, save_settings as save_event_settings,
+                      switched_on)
 from ..commands import ACTIONS, CommandWriter, action_label, action_name, normalize_percent, reason_text, status_text
 from ..i18n import t
 from ..storage import Storage
@@ -925,7 +926,8 @@ class AutomationTab(ttk.Frame):
     PUMP_PARAMS = ("pump_buy_pct", "pump_drop_pct", "pump_start_share", "pump_target_share", "pump_safety_s",
                    "pump_short_pct", "pump_cover_pct", "pump_cover_max_s")
     CRASH_PARAMS = ("crash_minutes", "crash_short_pct", "crash_target_pct", "crash_rise_pct", "crash_safety_s",
-                    "crash_rebuy_pct")
+                    "crash_rebuy_pct", "crash_rebuy_margin_pct", "crash_hold_stop_pct", "crash_hold_target_share",
+                    "crash_hold_max_min")
     RULE_COLUMNS = [
         ("id", "#", 40, "e"),
         ("stock", "common.stock", 75, "w"),
@@ -1345,7 +1347,7 @@ class AutomationTab(ttk.Frame):
         """Store the switches and parameters; invalid numbers keep their previous value."""
         old = load_event_settings(self.app.db)
         values = {"pumps": bool(self.ev_vars["pumps"].get()), "crashes": bool(self.ev_vars["crashes"].get()),
-                  "fund_events": old.fund_events}          # switched in the web interface only
+                  "fund_events": old.fund_events, "excluded": old.excluded}     # set in the web interface only
         for key in self.PUMP_PARAMS + self.CRASH_PARAMS:
             current = getattr(old, key)
             try:
@@ -1370,7 +1372,7 @@ class AutomationTab(ttk.Frame):
         rows = []
         for ev in ctx.db.recent_events(50):
             sched = ev["scheduled_ms"]
-            on = settings.pumps if ev["direction"] == "pump" else settings.crashes
+            on = switched_on(settings, ev["direction"], ev["stock_id"])
             phase = ev["phase"]
             future = sched >= now
             if phase is None or (not on and phase in ("wait_buy", "wait_pre")):

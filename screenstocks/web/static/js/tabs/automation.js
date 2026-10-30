@@ -3,11 +3,12 @@
 
 (() => {
   const { t, fmt, esc, cls } = SS;
-  const S = { el: null, data: null, editId: null, previewTimer: null, sigRules: "", sigEvents: "", sigLog: "", eventsInit: false };
+  const S = { el: null, data: null, editId: null, previewTimer: null, sigRules: "", sigEvents: "", sigLog: "", sigEvStocks: "", eventsInit: false };
   const q = (sel) => S.el.querySelector(sel);
   const PUMP = ["pump_buy_pct", "pump_drop_pct", "pump_start_share", "pump_target_share", "pump_safety_s", "pump_short_pct",
     "pump_cover_pct", "pump_cover_max_s"];
-  const CRASH = ["crash_minutes", "crash_short_pct", "crash_target_pct", "crash_rise_pct", "crash_safety_s", "crash_rebuy_pct"];
+  const CRASH = ["crash_minutes", "crash_short_pct", "crash_target_pct", "crash_rise_pct", "crash_safety_s", "crash_rebuy_pct",
+    "crash_rebuy_margin_pct", "crash_hold_stop_pct", "crash_hold_target_share", "crash_hold_max_min"];
   const SWITCHES = ["pumps", "crashes", "fund_events"];
 
   // ------------------------------------------------------------------ layout
@@ -75,6 +76,10 @@
               <div class="pgrid"><h4>${esc(t("event.pump_params"))}</h4>${PUMP.map(param).join("")}
                 <h4>${esc(t("event.crash_params"))}</h4>${CRASH.map(param).join("")}</div>
               <div class="ev-help">${esc(t("event.help"))}</div>
+            </details>
+            <details class="params"><summary>${esc(t("event.stocks"))} <span class="muted" data-role="ev-stocks-n"></span></summary>
+              <div class="stock-checks" data-role="ev-stocks"></div>
+              <div class="ev-help">${esc(t("event.stocks_hint"))}</div>
             </details>
             <div class="ev-list" data-role="events"></div>
           </section>
@@ -243,9 +248,32 @@
     const values = {};
     for (const k of SWITCHES) values[k] = q(`[data-ev="${k}"]`).checked;
     for (const k of [...PUMP, ...CRASH]) values[k] = q(`[data-param="${k}"]`).value;
+    const boxes = [...S.el.querySelectorAll("[data-evstock]")];
+    if (boxes.length) {          // unticked boxes, plus excluded stocks the list does not show (kept as they are)
+      const shown = new Set(boxes.map((c) => c.dataset.evstock));
+      values.excluded = [...(S.data?.event_settings.excluded || []).filter((sid) => !shown.has(sid)),
+        ...boxes.filter((c) => !c.checked).map((c) => c.dataset.evstock)];
+    }
     const saved = await SS.call("save_events", values);
+    if (S.data) S.data.event_settings = saved;
+    syncEventStocks();
     fillEventSettings(saved);
     refreshNow();
+  }
+
+  function syncEventStocks() {
+    const d = S.data;
+    if (!d) return;
+    const excluded = d.event_settings.excluded || [];
+    const sig = d.stocks.join(",") + "|" + excluded.join(",");
+    if (sig === S.sigEvStocks) return;
+    S.sigEvStocks = sig;
+    const box = q('[data-role="ev-stocks"]');
+    box.innerHTML = d.stocks.map((sid) =>
+      `<label class="check"><input type="checkbox" data-evstock="${esc(sid)}" ${excluded.includes(sid) ? "" : "checked"}>${esc(sid)}</label>`).join("");
+    box.querySelectorAll("input").forEach((c) => c.addEventListener("change", saveEvents));
+    const n = d.stocks.filter((sid) => !excluded.includes(sid)).length;
+    q('[data-role="ev-stocks-n"]').textContent = `${n}/${d.stocks.length}`;
   }
 
   function renderEvents(events, now) {
@@ -330,6 +358,7 @@
     fillSelect(f("side"), d.sides);
     if (!S.eventsInit) { fillEventSettings(d.event_settings); S.eventsInit = true; onFormChange(); }
     else for (const k of SWITCHES) q(`[data-ev="${k}"]`).checked = !!d.event_settings[k];
+    syncEventStocks();
     renderRules(d.rules);
     renderEvents(d.events, d.now);
     renderLog(d.log);

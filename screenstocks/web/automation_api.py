@@ -17,7 +17,8 @@ from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, TRAILING_
                           has_position, kind_name, mode_name, needs_position, round_help, side_name,
                           status_display, status_msg, trigger_price)
 from ..commands import normalize_percent
-from ..events import EventSettings, load_settings as load_event_settings, save_settings as save_event_settings
+from ..events import (EventSettings, load_settings as load_event_settings, save_settings as save_event_settings,
+                      switched_on)
 from ..gui import fmt as pyfmt
 from ..i18n import t
 
@@ -111,7 +112,7 @@ class AutomationApi:
             now = snap.get("server_ms") or self._now_ms()
             events = []
             for ev in db.recent_events(50):
-                on = ev_settings.pumps if ev["direction"] == "pump" else ev_settings.crashes
+                on = switched_on(ev_settings, ev["direction"], ev["stock_id"])
                 phase = ev["phase"]
                 future = ev["scheduled_ms"] >= now
                 if phase is None or (not on and phase in ("wait_buy", "wait_pre")):
@@ -248,8 +249,9 @@ class AutomationApi:
         with self._lock:
             old = load_event_settings(self._db)
             new_values = {k: bool(values.get(k, getattr(old, k))) for k in SWITCHES}
+            new_values["excluded"] = list(values.get("excluded", old.excluded))
             for f in fields(EventSettings):
-                if f.name in SWITCHES:
+                if f.name in SWITCHES or f.name == "excluded":
                     continue
                 current = getattr(old, f.name)
                 try:
