@@ -104,15 +104,17 @@ the Applications folder. The app is not signed by Apple, so macOS blocks the fir
 **Linux** – the game has no Linux version; it runs through Steam Proton, and the app finds the game folder inside
 the Proton prefix. Download `ScreenStocksTradingBot-x.y.z-linux-x86_64.tar.gz`, extract it and start the app:
 
-```
+```bash
 tar -xzf ScreenStocksTradingBot-x.y.z-linux-x86_64.tar.gz
 ./ScreenStocksTradingBot/ScreenStocksTradingBot
 ```
 
 The build is made on Ubuntu 22.04 (needs glibc 2.35 or newer) and includes Qt, but uses the usual X11/Qt system
-libraries. If it does not start, install them, on Debian/Ubuntu for example
-`sudo apt install libgl1 libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libwayland-server0 libpulse0 libgbm1`. If Qt cannot start, the classic interface
-opens instead and names the libraries.
+libraries. If it does not start, install them:
+- **Debian/Ubuntu**: `sudo apt install libgl1 libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libwayland-server0 libpulse0 libgbm1`
+- **Arch Linux**: `sudo pacman -S mesa libglvnd libxkbcommon-x11 xcb-util-cursor nss wayland libpulse libgbm`
+
+If Qt cannot start, the classic interface opens instead and names the libraries.
 
 Ubuntu 23.10 and newer (AppArmor) block the sandbox Qt WebEngine uses; there the app runs its web view without it
 (the view only shows the app's own pages). To keep the sandbox, run once
@@ -188,7 +190,7 @@ hand in the setup wizard.
 Requires Python 3.10+ (Windows, tkinter included). The new interface needs `pywebview`;
 without it the classic interface starts.
 
-```
+```bash
 pip install -r requirements.txt
 python main.py              # dashboard + recording
 python main.py --ui classic # classic interface for one run
@@ -201,14 +203,21 @@ On macOS and Linux use `python3 main.py` (or `./start.sh`, which takes the same 
 
 - **macOS** – Python from python.org includes tkinter (Homebrew Python needs `brew install python-tk`);
   `pip install -r requirements.txt` installs pywebview with everything it needs for WebKit.
-- **Linux** – tkinter is a separate package (`sudo apt install python3-tk`). The new interface needs a pywebview
-  backend: either GTK WebKit (`sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1`,
-  for the system Python or a virtual environment created with `--system-site-packages`) or Qt
-  (`pip install "pywebview[qt]"`). Without a backend the classic interface starts.
+- **Linux** – tkinter is a separate package:
+  - **Debian/Ubuntu**: `sudo apt install python3-tk`
+  - **Arch Linux**: `sudo pacman -S tk`
+  
+  The new interface needs a pywebview backend:
+  - **GTK WebKit**:
+    - **Debian/Ubuntu**: `sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1` (for the system Python or a virtual environment created with `--system-site-packages`).
+    - **Arch Linux**: `sudo pacman -S python-gobject webkit2gtk-4.1` (use a virtual environment created with `--system-site-packages`).
+  - **Qt**: `pip install "pywebview[qt]"` (or `pip install "pywebview[pyside6]"`).
+  
+  Without a backend the classic interface starts.
 
 ## Building
 
-```
+```bash
 pip install pyinstaller
 pyinstaller --noconfirm ScreenStocksTradingBot.spec            # -> dist/ScreenStocksTradingBot/
 iscc /DMyAppVersion=1.0.0 installer\ScreenStocksTradingBot.iss  # -> dist/installer/ (needs Inno Setup 6)
@@ -230,7 +239,7 @@ with AppArmor's restriction, with the profile script, and with Qt unable to star
   (the version is taken from the tag). The release also contains the macOS and Linux files.
 - "Run workflow" in the Actions tab → same build, files attached as workflow artifacts.
 
-```
+```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
