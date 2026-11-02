@@ -63,7 +63,8 @@ SS.applyTexts = (root = document) => {
 // ------------------------------------------------------------------ formatting (mirrors gui/fmt.py)
 
 // German and French: decimal comma, day-first dates, "12 %" (same as gui/fmt.py); French groups with a space.
-SS.LANGS = { de: "de-DE", en: "en-US", fr: "fr-FR" };
+// Simplified Chinese uses the same decimal point and K/M/B suffixes as English.
+SS.LANGS = { de: "de-DE", en: "en-US", fr: "fr-FR", zh: "zh-CN" };
 SS.locale = () => SS.LANGS[SS.lang] || "en-US";
 SS.commaLang = () => SS.lang === "de" || SS.lang === "fr";
 const locale = SS.locale;

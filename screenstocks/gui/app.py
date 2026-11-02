@@ -533,8 +533,9 @@ class MarketTab(ttk.Frame):
         now = ctx.server_now_ms or until
         for s_sid, direction, target, sched_ms, _pub in db.scheduled(50):
             if s_sid == sid and sched_ms >= now:
-                hlines.append(HLine(target, THEME["warn"], t("market.scheduled_line", direction=direction)))
-                upcoming.append(t("market.scheduled_info", direction=direction, target=fmt.price(target),
+                hlines.append(HLine(target, THEME["warn"],
+                                    t("market.scheduled_line", direction=t(f"event.{direction}"))))
+                upcoming.append(t("market.scheduled_info", direction=t(f"event.{direction}"), target=fmt.price(target),
                                   time=fmt.clock(sched_ms), countdown=fmt.duration((sched_ms - now) / 1000)))
 
         self.chart.set_data([Series(sid, color, pts)], markers, hlines, x_range=(since, until),

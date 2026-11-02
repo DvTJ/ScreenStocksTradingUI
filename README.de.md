@@ -89,7 +89,7 @@ enthalten) oder GTK WebKit; funktioniert keins von beiden, startet die klassisch
   Hinweis verlinkt die Release-Seite.
 - **Verdichten** – Kurse und Portfolio-Snapshots älter als 7 Tage werden beim Start auf einen Wert pro
   10 Sekunden reduziert; Trades, News, Dividenden und Regeln bleiben immer vollständig.
-- Oberfläche auf Deutsch, Englisch und Französisch, Einrichtungsassistent beim ersten Start.
+- Oberfläche auf Deutsch, Englisch, Französisch und vereinfachtem Chinesisch, Einrichtungsassistent beim ersten Start.
 
 ## Installation
 
@@ -130,7 +130,7 @@ Spiel-Ordner ein (siehe [Wo die Dateien liegen](#wo-die-dateien-liegen)); erst d
 
 Beim ersten Start fragt ein kurzer Assistent:
 
-1. **Sprache** – Deutsch / English / Français
+1. **Sprache** – Deutsch / English / Français / 简体中文
 2. **Spiel-Ordner** – der `export`-Ordner des Mods, normalerweise
    `%USERPROFILE%\AppData\LocalLow\Conradical Games\Screen Stocks\mods\export`
    (wird automatisch erkannt). Der Assistent kann `export` und `commands` in der

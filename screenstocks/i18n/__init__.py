@@ -1,10 +1,10 @@
-"""Minimal translation layer (German / English / French).
+"""Minimal translation layer (German / English / French / Simplified Chinese).
 
     from screenstocks.i18n import t
-    t("market.title")                 -> "Markt" / "Market" / "Marché"
+    t("market.title")                 -> "Markt" / "Market" / "Marché" / "行情"
     t("trade.sent", action="Buy", ...) -> formatted string
 
-Strings live in one module per language (de.py, en.py, fr.py). Adding a
+Strings live in one module per language (de.py, en.py, fr.py, zh.py). Adding a
 language = add a file and a LANGUAGES entry; missing keys fall back to English.
 
 The language is chosen at startup (set_language). The classic interface keeps it
@@ -20,11 +20,11 @@ import subprocess
 import sys
 from typing import Optional
 
-from . import de, en, fr
+from . import de, en, fr, zh
 
-LANGUAGES = {"de": "Deutsch", "en": "English", "fr": "Français"}
+LANGUAGES = {"de": "Deutsch", "en": "English", "fr": "Français", "zh": "简体中文"}
 
-_STRINGS = {"de": de.STRINGS, "en": en.STRINGS, "fr": fr.STRINGS}
+_STRINGS = {"de": de.STRINGS, "en": en.STRINGS, "fr": fr.STRINGS, "zh": zh.STRINGS}
 _lang = "en"
 
 
@@ -59,14 +59,19 @@ def keys() -> list[str]:
 
 
 def system_language() -> str:
-    """'de' / 'fr' for a German / French system UI, otherwise 'en'."""
+    """'de' / 'fr' / 'zh' for a German / French / Simplified Chinese system UI, otherwise 'en'."""
     try:
-        primary = ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF
-        return {0x07: "de", 0x0C: "fr"}.get(primary, "en")
+        langid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+        if langid in (0x0804, 0x1004):       # Chinese (PRC), Chinese (Singapore) - Simplified
+            return "zh"
+        return {0x07: "de", 0x0C: "fr"}.get(langid & 0x3FF, "en")
     except Exception:
         loc = (locale.getlocale()[0] or "").lower()
         if sys.platform == "darwin" and not os.environ.get("LANG"):  # started from Finder: no LANG
             loc = _apple_language() or loc
+        # only Simplified Chinese locales; Traditional Chinese (zh_TW / zh_HK) keeps English
+        if loc == "zh" or loc.startswith(("zh_cn", "zh-sg", "zh-hans", "chinese (simplified", "chinese_simplified")):
+            return "zh"
         for code, names in (("de", ("de", "german")), ("fr", ("fr", "french"))):
             if loc.startswith(names):
                 return code

@@ -19,8 +19,8 @@
   --radius: 12px;
   --radius-sm: 8px;
   --gap: 12px;
-  --font: "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
-  --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --font: "Segoe UI Variable Text", "Segoe UI", Inter, "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --mono: "Cascadia Mono", Consolas, "Microsoft YaHei UI", "PingFang SC", ui-monospace, monospace;
   --shadow: 0 10px 34px rgba(0, 0, 0, .45);
 }
 
