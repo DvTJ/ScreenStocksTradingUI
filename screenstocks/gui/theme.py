@@ -4,7 +4,13 @@ import sys
 import tkinter as tk
 from tkinter import ttk
 
+from ..i18n import get_language
 from ..settings import resource_path
+
+# Segoe UI has no CJK glyphs and Tk's per-glyph fallback is unreliable on Windows, so the classic
+# interface asks for Microsoft YaHei UI when the UI language is Simplified Chinese.
+_family = ("Microsoft YaHei UI" if sys.platform == "win32" and get_language() == "zh"
+           else "Segoe UI" if sys.platform == "win32" else "TkDefaultFont")
 
 THEME = {
     "bg": "#1b1c1f",
@@ -20,20 +26,19 @@ THEME = {
     "down": "#f85149",
     "warn": "#d29922",
     "select": "#2f4a6b",
-    "font": ("Segoe UI", 10),
-    "font_bold": ("Segoe UI", 10, "bold"),
-    "font_small": ("Segoe UI", 8),
-    "font_small_bold": ("Segoe UI", 8, "bold"),
-    "font_kpi": ("Segoe UI", 15, "bold"),
+    "font": (_family, 10),
+    "font_bold": (_family, 10, "bold"),
+    "font_small": (_family, 8),
+    "font_small_bold": (_family, 8, "bold"),
+    "font_kpi": (_family, 15, "bold"),
 }
 FONT_KEYS = ("font", "font_bold", "font_small", "font_small_bold", "font_kpi")
 _BASE_FONTS = {k: THEME[k] for k in FONT_KEYS}
-_family = "Segoe UI"
 
 
 def font(size: int, *style: str) -> tuple:
-    """A font in the UI family: Segoe UI on Windows, the system UI font elsewhere (macOS Tk counts 72 dpi
-    points, so its sizes are scaled to look like Windows)."""
+    """A font in the UI family: Segoe UI (Microsoft YaHei UI for Chinese) on Windows, the system UI font
+    elsewhere (macOS Tk counts 72 dpi points, so its sizes are scaled to look like Windows)."""
     return (_family, round(size * 4 / 3) if sys.platform == "darwin" else size, *style)
 
 

@@ -371,7 +371,7 @@
     const now = SS.lastTick && SS.lastTick.server_now;
     if (ev && now && ev.at >= now) {
       banner.textContent = t("market.scheduled_info", {
-        direction: ev.direction, target: fmt.price(ev.target), time: fmt.clock(ev.at), countdown: fmt.duration((ev.at - now) / 1000),
+        direction: t("event." + ev.direction), target: fmt.price(ev.target), time: fmt.clock(ev.at), countdown: fmt.duration((ev.at - now) / 1000),
       });
       banner.classList.remove("hidden");
     } else banner.classList.add("hidden");

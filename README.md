@@ -90,7 +90,7 @@ or GTK WebKit; if neither works, the classic interface starts.
   installer: the notice links the release page.
 - **Data compaction** – prices and portfolio snapshots older than 7 days are thinned out to one value per
   10 seconds at start-up; trades, news, dividends and rules are always kept.
-- German, English and French UI, setup wizard on first start.
+- German, English, French and Simplified Chinese UI, setup wizard on first start.
 
 ## Installation
 
@@ -137,7 +137,7 @@ The setup wizard checks this flag and shows these steps when `market.json` is mi
 
 On first start a short setup wizard asks for:
 
-1. **Language** – Deutsch / English / Français
+1. **Language** – Deutsch / English / Français / 简体中文
 2. **Game folder** – the mod's `export` folder, usually
    `%USERPROFILE%\AppData\LocalLow\Conradical Games\Screen Stocks\mods\export`
    (detected automatically). The wizard can switch on `export` and `commands`

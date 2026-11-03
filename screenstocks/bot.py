@@ -302,7 +302,7 @@ class Strategy:
         p, z = self.p(sid), self.z.get(sid)
         if held:
             gain = (price / held["entry_price"] - 1) * (1 if held["side"] == "long" else -1) * 100
-            return "exit_wait", {"side": held["side"], "gain": f"{gain:+.1f}", "z": "?" if z is None else f"{z:+.1f}",
+            return "exit_wait", {"side": t(f"side.{held['side']}"), "gain": f"{gain:+.1f}", "z": "?" if z is None else f"{z:+.1f}",
                                  "exit": f"{p.exit_z:g}"}
         if z is None:
             return "warmup", {"s": max(0, round(p.tau_s - (now - self._born.get(sid, now))))}
@@ -1187,7 +1187,7 @@ class BotTrader:
             elif event_soon:
                 code, args = "event_soon", self._event_args(next(iter(event_soon.values())))
             elif armed:
-                code, args = "rule_armed", {"kind": "/".join(sorted(armed))}
+                code, args = "rule_armed", {"kind": "/".join(t(f"action.{a}") for a in sorted(armed))}
             else:
                 code, args = st.why_not(sid, now_s, price, None, buy_free, short_free, cd_left, len(held))
             if code != "excluded":                   # you chose that one yourself: no need to say it

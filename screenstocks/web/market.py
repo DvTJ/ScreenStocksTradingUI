@@ -168,7 +168,8 @@ class MarketApi:
         events = []
         for s, direction, target, at, _pub in db.scheduled(50):
             if s == stock_id and at >= now:
-                lines.append(dict(price=target, kind="event", title=t("market.scheduled_line", direction=direction)))
+                lines.append(dict(price=target, kind="event",
+                                  title=t("market.scheduled_line", direction=t(f"event.{direction}"))))
                 events.append(dict(direction=direction, target=target, at=at))
         return {"markers": markers, "news": news, "lines": lines, "events": sorted(events, key=lambda e: e["at"])}
 
