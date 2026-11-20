@@ -44,3 +44,56 @@ def test_share_counts_beyond_64_bit_integers(tmp_path):
         assert stock["available_shares"] == float(huge) and stock["max_volume"] == float(huge)
     finally:
         db.close()
+
+
+def _ipo_snapshot(ts, count, owned, cash):
+    player = {"cash": cash, "netWorth": cash + owned * 20,
+              "positions": [{"stockId": "$PUMP", "sharesOwned": owned, "averageBuyPrice": 10}]}
+    if count is not None:
+        player["ipoCount"] = count
+    return parse_market({
+        "sequence": ts, "writtenAtMs": ts, "serverTimeMs": ts, "serverTick": ts,
+        "marketReady": True, "player": player,
+        "stocks": [{"stockId": "$PUMP", "price": 20}],
+    })
+
+
+def test_ipo_history_and_all_time_on_migrated_database(tmp_path):
+    from threading import Lock
+
+    from screenstocks.web.portfolio_api import PortfolioApi
+
+    path = tmp_path / "history.db"
+    db = Storage(path)
+    for row in [(1000, 0, 10, 200), (2000, 0, 8, 240), (3000, 2, 0, 100),
+                (4000, None, 3, 70), (5000, 1, 2, 90), (6000, 2, 1, 110)]:
+        assert db.store_market(_ipo_snapshot(*row), include_prices=True)
+    assert db.ipo_runs() == [2, 0]  # no invented IPO 1, missing data and lower counts are ignored
+    db.conn.executemany("INSERT INTO dividends VALUES (?, ?, ?, ?)", [(2000, 5, 5, 1), (5000, 9, 9, 1)])
+    db.conn.execute("DROP TABLE ipo_runs")
+    db.conn.execute("PRAGMA user_version = 2")
+    db.conn.commit()
+    db.close()
+
+    db = Storage(path)
+    try:
+        api = PortfolioApi()
+        api._db, api._lock, api._closing = db, Lock(), False
+        assert db.ipo_runs() == [2, 0]
+        assert api.portfolio("all", 0)["cash"] == 240
+        assert api.portfolio("all", 0)["positions"][0]["owned"] == 8
+        assert api.portfolio("all", 0)["received"] == 5
+        assert api.portfolio("all", "current")["cash"] == 110
+        assert api.portfolio("all")["received"] == 14
+        assert len(api.portfolio_chart("all", 0)["cash"]) == 2
+        assert len(api.portfolio_chart("all", 2)["cash"]) == 4
+        old, current, all_time = api.journal("all", 0), api.journal("all", 2), api.journal("all")
+        assert [x["time"] for x in old["trades"]] == [2000]
+        assert [x["time"] for x in current["trades"]] == [4000, 5000, 6000]
+        assert all_time["realized"] == old["realized"] + current["realized"] == 40
+        assert all_time["dividends"] == 14
+        db.compact(10_000)
+        assert db.ipo_runs() == [2, 0]
+        assert db.snapshot_value_at("cash", 3000, since_ms=3000) == 100
+    finally:
+        db.close()

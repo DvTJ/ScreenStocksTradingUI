@@ -7,7 +7,7 @@ from typing import Optional
 from ..i18n import t
 from . import fmt
 from .theme import THEME
-from .widgets import RangeBar, SortableTree, scrolled
+from .widgets import IpoPicker, RangeBar, SortableTree, scrolled
 
 
 def _kpi_row(master, items: list[tuple[str, str]]) -> dict[str, ttk.Label]:
@@ -128,6 +128,8 @@ class JournalTab(ttk.Frame):
         bar.pack(fill="x", pady=4)
         self.range = RangeBar(bar, self._rerender, default="24h")
         self.range.pack(side="left", padx=4)
+        self.ipo = IpoPicker(bar, self._rerender)
+        self.ipo.pack(side="left", padx=8)
         self.note = ttk.Label(bar, text=t("journal.note"), style="Muted.TLabel")
         self.note.pack(side="left", padx=16)
 
@@ -159,7 +161,7 @@ class JournalTab(ttk.Frame):
         if time.time() - self._last < self.MIN_INTERVAL_S:
             return
         self._last = time.time()
-        win = _range_window(ctx, self.range)
+        win = ctx.db.journal_window(self.range.seconds, self.ipo.run(ctx.db))
         trades = []
         if win:
             for st in ctx.stocks:
