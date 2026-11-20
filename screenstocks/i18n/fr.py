@@ -469,6 +469,8 @@ STRINGS = {
     'bot.level.simple': 'Simple',
     'bot.level.medium': 'Médium',
     'bot.level.advanced': 'Avancé',
+    'bot.fixed_buy_size': 'Taille d’achat fixe',
+    'bot.d.fixed_buy_size': 'Les achats utilisent le pourcentage choisi du maximum autorisé, sans réduction liée au signal, au risque de stop ou à l’historique. À 100 %, un achat utilise tout le cash autorisé pour cette action.',
     'bot.trade_pct': '% du maximum par trade',
     'bot.d.trade_pct': 'Part du maximum autorisé par le jeu pour un ordre (votre cash, ou les actions encore disponibles pour un achat) ; le bot mise moins quand le signal est faible.',
     'bot.d.caution': "Trois niveaux de risque prêts à l'emploi. Ils partagent le même signal optimisé et ne diffèrent que par la perte possible d'un trade (3 % / 10 % / 20 % de votre cash) et le nombre de positions ouvertes.",

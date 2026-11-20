@@ -39,6 +39,7 @@
         <section class="panel card">
           <div class="bset">
             <div class="field wide"><label>${esc(t("bot.trade_pct"))} ${info("trade_pct")}</label><input class="in num" type="number" min="1" max="100" data-f="trade_pct"></div>
+            <label class="switch"><input type="checkbox" data-f="fixed_buy_size"><span class="track"></span>${esc(t("bot.fixed_buy_size"))} ${info("fixed_buy_size")}</label>
             <div class="field only-medium"><label>${esc(t("bot.caution"))} ${info("caution")}</label>
               <select class="in" data-f="caution">${options(CAUTIONS, (k) => t(`bot.caution.${k}`))}</select></div>
             <div class="field only-medium"><label>${esc(t("bot.max_positions"))} ${info("max_positions")}</label><input class="in num" type="number" min="1" max="10" data-f="max_positions"></div>
@@ -152,6 +153,7 @@
     }
     return {
       enabled: f("enabled").checked, paper: f("paper").checked, level: f("level").value, trade_pct: parse(f("trade_pct").value) ?? S.settings.trade_pct,
+      fixed_buy_size: f("fixed_buy_size").checked,
       caution: f("caution").value, max_positions: parse(f("max_positions").value) ?? S.settings.max_positions,
       shorts: f("shorts").checked, trade_events: f("trade_events").checked, recalib_min: parse(f("recalib_min").value) ?? S.settings.recalib_min,
       loss_limit_pct: parse(f("loss_limit_pct").value) ?? S.settings.loss_limit_pct,
@@ -187,7 +189,7 @@
       if (!force && document.activeElement === c) return;
       if (c.type === "checkbox") c.checked = !!v; else c.value = v;
     };
-    set("enabled", s.enabled); set("paper", s.paper); set("level", s.level); set("trade_pct", s.trade_pct); set("caution", s.caution);
+    set("enabled", s.enabled); set("paper", s.paper); set("level", s.level); set("trade_pct", s.trade_pct); set("fixed_buy_size", Boolean(s.fixed_buy_size)); set("caution", s.caution);
     set("max_positions", s.max_positions); set("shorts", s.shorts); set("trade_events", s.trade_events); set("recalib_min", s.recalib_min); set("loss_limit_pct", s.loss_limit_pct);
     set("buy_upgrades", s.buy_upgrades); set("upgrade_payback_min", s.upgrade_payback_min); set("upgrade_max_pct", s.upgrade_max_pct);
     q(".bot").dataset.level = s.level;
