@@ -28,7 +28,7 @@ from .chart import HLine, LineChart, Marker, Series, blend
 from .analysis import DividendTab, JournalTab, StatsTab
 from .bot_tab import BotTab
 from .theme import THEME, apply_style, font, set_window_icon
-from .widgets import RangeBar, SortableTree, scrolled
+from .widgets import IpoPicker, RangeBar, SortableTree, scrolled
 
 
 # trade kind -> chart colour (letter and label come from i18n: tradekind.*)
@@ -683,6 +683,8 @@ class PortfolioTab(ttk.Frame):
         bar.pack(fill="x", pady=4)
         self.range = RangeBar(bar, self._range_changed, default="1h")
         self.range.pack(side="left", padx=4)
+        self.ipo = IpoPicker(bar, self._range_changed)
+        self.ipo.pack(side="left", padx=8)
 
         paned = ttk.PanedWindow(self, orient="vertical")
         paned.pack(fill="both", expand=True)
@@ -728,7 +730,13 @@ class PortfolioTab(ttk.Frame):
 
     def refresh(self, ctx: Ctx) -> None:
         self._ctx = ctx
-        db, snap = ctx.db, ctx.snap
+        db = ctx.db
+        run = self.ipo.run(db)
+        start, end = db.ipo_bounds(run)
+        snap = db.latest_snapshot(run) if run is not None else ctx.snap
+        positions = db.current_positions(end) if run is not None else ctx.positions
+        div_factor, div_count = db.dividend_factor(since_ms=start, until_ms=end)
+        rates = {s["stock_id"]: s.get("dividend_rate") or 0.0 for s in ctx.stocks}
         net = snap.get("net_worth") if snap else None
         cash = snap.get("cash") if snap else None
         self.kpi["net"].configure(text=fmt.big(net))
@@ -741,7 +749,9 @@ class PortfolioTab(ttk.Frame):
         if until:
             secs = self.range.seconds
             first = db.conn.execute("SELECT MIN(server_ms) FROM snapshots").fetchone()[0] or until
-            win = self.chart.effective_window((first if secs is None else max(first, until - secs * 1000), until))
+            window = db.history_window(secs, first, until, run)
+            if window:
+                win = self.chart.effective_window(window)
         if win:
             rows = db.portfolio_series(*win, max_points=max(200, self.chart.winfo_width()))
             series = [Series(t("common.net_worth"), THEME["accent"], [(ts, n, n, n) for ts, n, _c in rows]),
@@ -750,18 +760,20 @@ class PortfolioTab(ttk.Frame):
             received = db.dividend_sum(*win)
             self.kpi["div_sum"].configure(text=fmt.big(received) if received else "–",
                                           style="KpiUp.TLabel" if received else "Kpi.TLabel")
-            start_net = db.snapshot_value_at("net_worth", win[0]) or (rows[0][1] if rows else None)
+            start_net = db.snapshot_value_at("net_worth", win[0], since_ms=start) or (rows[0][1] if rows else None)
             delta = net - start_net if net is not None and start_net is not None else None
             self.kpi["delta"].configure(
                 text=f"{fmt.big(delta)}  ({fmt.pct(fmt.change_pct(net, start_net))})" if delta is not None else "–",
                 style="KpiUp.TLabel" if delta and delta > 0 else "KpiDown.TLabel" if delta and delta < 0 else "Kpi.TLabel")
         else:
             self.chart.set_data([], empty_text=t("pf.no_data"))
+            self.kpi["delta"].configure(text="–")
+            self.kpi["div_sum"].configure(text="–")
 
         rows, total_pl, div_total = [], 0.0, 0.0
-        for sid, pos in sorted(ctx.positions.items()):
+        for sid, pos in sorted(positions.items()):
             last = ctx.last_prices.get(sid)
-            price = last[1] if last else None
+            price = (last[1] if last else None) if end == 2 ** 62 else db.price_at(sid, until or end)
             owned, avg = pos["shares_owned"], pos["avg_buy_price"]
             shorted, avg_s = pos["shares_shorted"], pos["avg_short_price"]
             value = price * owned if price is not None else None
@@ -770,7 +782,8 @@ class PortfolioTab(ttk.Frame):
             spl = (avg_s - price) * shorted if price is not None and shorted else None
             total_pl += (pl or 0) + (spl or 0)
             tot = (pl or 0) + (spl or 0)
-            div = ctx.dividend_per_min(sid)
+            rate = rates.get(sid, 0.0)
+            div = owned * price * rate * (div_factor or 1.0) if owned and price else None
             div_total += div or 0.0
             rows.append((sid, (
                 sid, fmt.big(owned) if owned else "", fmt.price(avg) if owned else "", fmt.price(price),
@@ -781,11 +794,11 @@ class PortfolioTab(ttk.Frame):
                     short=shorted, avg_short=avg_s, short_pl=spl, div_min=div),
                 ("up",) if tot > 0 else ("down",) if tot < 0 else ()))
         self.pos_tree.set_rows(rows)
-        self.kpi["pl"].configure(text=fmt.big(total_pl) if ctx.positions else "–",
+        self.kpi["pl"].configure(text=fmt.big(total_pl) if positions else "–",
                                  style="KpiUp.TLabel" if total_pl > 0 else "KpiDown.TLabel" if total_pl < 0 else "Kpi.TLabel")
 
         chg = []
-        for ts, sid, owned, avg, shorted, avg_s in db.position_changes(200):
+        for ts, sid, owned, avg, shorted, avg_s in db.position_changes(200, since_ms=start, until_ms=end):
             chg.append((f"{ts}:{sid}", (fmt.clock(ts, with_date=True), sid, fmt.big(owned), fmt.price(avg),
                                        fmt.big(shorted), fmt.price(avg_s)),
                         dict(time=ts, stock=sid, owned=owned, avg=avg, short=shorted, avg_short=avg_s), ()))
@@ -793,14 +806,14 @@ class PortfolioTab(ttk.Frame):
 
         self.kpi["div_min"].configure(text=fmt.big(div_total) if div_total else "–",
                                       style="KpiUp.TLabel" if div_total else "Kpi.TLabel")
-        factor = (t("pf.div_factor", f=fmt.num(ctx.div_factor, 2), n=ctx.div_count) if ctx.div_factor
+        factor = (t("pf.div_factor", f=fmt.num(div_factor, 2), n=div_count) if div_factor
                   else t("pf.div_factor_unknown"))
         self.div_caption.configure(text=(t("pf.div_hour", v=fmt.big(div_total * 60)) + "  ·  " if div_total else "")
                                    + factor)
         self.div_tree.set_rows([
             (str(ts), (fmt.clock(ts, with_date=True), fmt.big(amount), f"×{fmt.num(factor_, 2)}"),
              dict(time=ts, amount=amount, factor=factor_), ("up",))
-            for ts, amount, factor_ in db.dividends(limit=300)
+            for ts, amount, factor_ in db.dividends(start, end, limit=300)
         ])
 
 

@@ -30,6 +30,26 @@ class RangeBar(ttk.Frame):
         return dict(RANGES)[self.var.get()]
 
 
+class IpoPicker(ttk.Combobox):
+    def __init__(self, master, on_change: Callable[[], None]):
+        super().__init__(master, state="readonly", width=19)
+        self.bind("<<ComboboxSelected>>", lambda _event: on_change())
+        self._runs = []
+
+    def run(self, db) -> Optional[int]:
+        runs = db.ipo_runs()
+        if runs != self._runs or self.current() < 0:
+            index = self.current()
+            selection = self._runs[index - 2] if index >= 2 else None
+            self._runs = runs
+            self.configure(values=[t("ipo.current"), t("ipo.all"), *(t("ipo.run", n=n) for n in runs)])
+            self.current(runs.index(selection) + 2 if selection in runs else max(0, min(index, 1)))
+        index = self.current()
+        if index == 0:
+            return runs[0] if runs else None
+        return runs[index - 2] if index >= 2 else None
+
+
 class SortableTree(ttk.Treeview):
     """Treeview whose rows are re-sorted on every update by the clicked column.
 

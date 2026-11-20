@@ -18,7 +18,7 @@ from .reader import MarketSnapshot, PriceSample
 
 # Bump when SCHEMA or _migrate() gain something: a database below this version is prepared once
 # (tables, WAL mode, migrations); later opens do not write at all, so they never wait for a lock.
-SCHEMA_VERSION = 2            # 2: rules.repeat_times / repeat_wait_s / pause_until_ms (2.2.0 forgot the bump)
+SCHEMA_VERSION = 3
 BUSY_TIMEOUT_S = 30           # how long a connection waits for another one's write lock
 COMPACT_CHUNK = 20_000        # rows deleted per transaction when compacting (keeps the write lock short)
 
@@ -66,6 +66,12 @@ CREATE TABLE IF NOT EXISTS snapshots (
     UNIQUE (written_ms, sequence)
 );
 CREATE INDEX IF NOT EXISTS idx_snapshots_server ON snapshots (server_ms);
+
+-- The first recorded snapshot for each observed IPO count.
+CREATE TABLE IF NOT EXISTS ipo_runs (
+    ipo_count INTEGER PRIMARY KEY,
+    start_ms INTEGER NOT NULL UNIQUE
+);
 
 -- Position rows are only written when a position changes.
 CREATE TABLE IF NOT EXISTS position_history (
@@ -235,6 +241,16 @@ class Storage:
             self.conn.execute("ALTER TABLE rules ADD COLUMN repeat_wait_s REAL NOT NULL DEFAULT 0")
             self.conn.execute("ALTER TABLE rules ADD COLUMN pause_until_ms INTEGER")
 
+        self.conn.execute("""
+            INSERT OR IGNORE INTO ipo_runs (ipo_count, start_ms)
+            SELECT ipo_count, server_ms FROM (
+                SELECT ipo_count, server_ms, MAX(ipo_count) OVER (
+                    ORDER BY server_ms, id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                ) AS previous_count
+                FROM snapshots WHERE ipo_count >= 0 AND server_ms > 0 AND market_ready = 1
+            ) WHERE previous_count IS NULL OR ipo_count > previous_count
+        """)
+
     def close(self) -> None:
         self.conn.close()
 
@@ -285,8 +301,14 @@ class Storage:
             )
 
         if p is not None:
+            reset = False
+            if snap.market_ready and snap.server_time_ms > 0 and p.ipo_count is not None:
+                previous = c.execute("SELECT ipo_count, start_ms FROM ipo_runs ORDER BY start_ms DESC LIMIT 1").fetchone()
+                if previous is None or (p.ipo_count > previous[0] and snap.server_time_ms > previous[1]):
+                    c.execute("INSERT INTO ipo_runs VALUES (?, ?)", (p.ipo_count, snap.server_time_ms))
+                    reset = previous is not None
             changed = self._store_positions(snap.server_time_ms, p.positions)
-            self._detect_dividend(snap, changed)
+            self._detect_dividend(snap, changed or reset)
 
         c.executemany(
             """INSERT OR IGNORE INTO market_news (id, created_ms, stock_id, price, kind, lookback_minutes)
@@ -392,10 +414,14 @@ class Storage:
             return values[i] if i >= 0 else 0.0
 
         found = 0
+        reset_times = self._ipo_reset_times()
         snaps = self.conn.execute(
             "SELECT server_ms, cash FROM snapshots WHERE cash IS NOT NULL ORDER BY server_ms").fetchall()
         for prev, (ts, cash) in zip(snaps, snaps[1:]):
             if cash <= prev[1] or ts % 60000 > self.DIVIDEND_WINDOW_MS:
+                continue
+            reset = bisect.bisect_right(reset_times, prev[0])
+            if reset < len(reset_times) and reset_times[reset] <= ts:
                 continue
             i = bisect.bisect_right(change_times, prev[0])
             if i < len(change_times) and change_times[i] <= ts:
@@ -411,11 +437,13 @@ class Storage:
         self.set_setting("dividends_backfilled", "1")
         return found
 
-    def dividend_factor(self, last_n: int = 5) -> tuple[Optional[float], int]:
+    def dividend_factor(self, last_n: int = 5, *, since_ms: int = 0, until_ms: int = 2 ** 62) -> tuple[Optional[float], int]:
         """Median multiplier of the most recent payouts and the total number of detected payouts."""
         factors = [r[0] for r in self.conn.execute(
-            "SELECT factor FROM dividends ORDER BY server_ms DESC LIMIT ?", (last_n,))]
-        count = self.conn.execute("SELECT COUNT(*) FROM dividends").fetchone()[0]
+            "SELECT factor FROM dividends WHERE server_ms BETWEEN ? AND ? ORDER BY server_ms DESC LIMIT ?",
+            (since_ms, until_ms, last_n))]
+        count = self.conn.execute("SELECT COUNT(*) FROM dividends WHERE server_ms BETWEEN ? AND ?",
+                                  (since_ms, until_ms)).fetchone()[0]
         return (statistics.median(factors) if factors else None), count
 
     def dividends(self, since_ms: int = 0, until_ms: int = 2 ** 62, limit: int = 500) -> list[tuple]:
@@ -441,8 +469,46 @@ class Storage:
 
     # ------------------------------------------------------------------- reads
 
-    def latest_snapshot(self) -> Optional[dict]:
-        cur = self.conn.execute("SELECT * FROM snapshots ORDER BY id DESC LIMIT 1")
+    def ipo_runs(self) -> list[int]:
+        return [r[0] for r in self.conn.execute("SELECT ipo_count FROM ipo_runs ORDER BY start_ms DESC")]
+
+    def _ipo_reset_times(self) -> list[int]:
+        return [r[0] for r in self.conn.execute(
+            "SELECT start_ms FROM ipo_runs ORDER BY start_ms LIMIT -1 OFFSET 1")]
+
+    def ipo_bounds(self, run: Optional[int] = None) -> tuple[int, int]:
+        if run is None:
+            return 0, 2 ** 62
+        rows = self.conn.execute("SELECT ipo_count, start_ms FROM ipo_runs ORDER BY start_ms").fetchall()
+        for index, (count, start) in enumerate(rows):
+            if count == run:
+                end = rows[index + 1][1] - 1 if index + 1 < len(rows) else 2 ** 62
+                return start, end
+        return 1, 0
+
+    def history_window(self, seconds: Optional[int], first: Optional[int], end: Optional[int],
+                       run: Optional[int] = None) -> Optional[tuple[int, int]]:
+        if end is None:
+            return None
+        start, limit = self.ipo_bounds(run)
+        end = min(end, limit)
+        first = max(start, first if first is not None else end)
+        if first > end:
+            return None
+        return (first if seconds is None else max(first, end - seconds * 1000)), end
+
+    def journal_window(self, seconds: Optional[int], run: Optional[int] = None) -> Optional[tuple[int, int]]:
+        first = self.conn.execute("SELECT MIN(server_ms) FROM snapshots").fetchone()[0]
+        snapshot = self.latest_snapshot(run)
+        end = snapshot["server_ms"] if snapshot else self.latest_time_ms()
+        return self.history_window(seconds, first if first is not None else self.first_time_ms(), end, run)
+
+    def latest_snapshot(self, run: Optional[int] = None) -> Optional[dict]:
+        if run is None:
+            cur = self.conn.execute("SELECT * FROM snapshots ORDER BY id DESC LIMIT 1")
+        else:
+            cur = self.conn.execute("SELECT * FROM snapshots WHERE server_ms BETWEEN ? AND ? "
+                                    "ORDER BY server_ms DESC, id DESC LIMIT 1", self.ipo_bounds(run))
         row = cur.fetchone()
         if row is None:
             return None
@@ -520,35 +586,36 @@ class Storage:
             (since_ms, until_ms, bucket),
         ).fetchall()
 
-    def snapshot_value_at(self, column: str, server_ms: int) -> Optional[float]:
+    def snapshot_value_at(self, column: str, server_ms: int, *, since_ms: int = 0) -> Optional[float]:
         assert column in ("net_worth", "cash")
         row = self.conn.execute(
-            f"SELECT {column} FROM snapshots WHERE server_ms<=? AND {column} IS NOT NULL "
+            f"SELECT {column} FROM snapshots WHERE server_ms BETWEEN ? AND ? AND {column} IS NOT NULL "
             "ORDER BY server_ms DESC LIMIT 1",
-            (server_ms,),
+            (since_ms, server_ms),
         ).fetchone()
         return row[0] if row else None
 
-    def _latest_positions_rows(self):
+    def _latest_positions_rows(self, until_ms: int = 2 ** 62):
         return self.conn.execute(
             """SELECT stock_id, shares_owned, avg_buy_price, shares_shorted, avg_short_price
                FROM position_history ph
-               WHERE server_ms = (SELECT MAX(server_ms) FROM position_history WHERE stock_id=ph.stock_id)"""
+               WHERE server_ms = (SELECT MAX(server_ms) FROM position_history WHERE stock_id=ph.stock_id AND server_ms <= ?)""",
+            (until_ms,)
         ).fetchall()
 
-    def current_positions(self) -> dict[str, dict]:
+    def current_positions(self, until_ms: int = 2 ** 62) -> dict[str, dict]:
         out = {}
-        for sid, owned, avg_buy, shorted, avg_short in self._latest_positions_rows():
+        for sid, owned, avg_buy, shorted, avg_short in self._latest_positions_rows(until_ms):
             if owned or shorted:
                 out[sid] = dict(shares_owned=owned or 0.0, avg_buy_price=avg_buy or 0.0,
                                 shares_shorted=shorted or 0.0, avg_short_price=avg_short or 0.0)
         return out
 
-    def position_changes(self, limit: int = 200) -> list[tuple]:
+    def position_changes(self, limit: int = 200, *, since_ms: int = 0, until_ms: int = 2 ** 62) -> list[tuple]:
         return self.conn.execute(
             """SELECT server_ms, stock_id, shares_owned, avg_buy_price, shares_shorted, avg_short_price
-               FROM position_history ORDER BY server_ms DESC LIMIT ?""",
-            (limit,),
+               FROM position_history WHERE server_ms BETWEEN ? AND ? ORDER BY server_ms DESC LIMIT ?""",
+            (since_ms, until_ms, limit),
         ).fetchall()
 
     def news(self, stock_id: Optional[str] = None, since_ms: int = 0,
@@ -626,11 +693,21 @@ class Storage:
             (stock_id, until_ms),
         ).fetchall()
         out = []
-        # The first row only tells us the state when recording began - not a trade.
-        for (_t0, o0, a0, s0, as0), (t, o1, a1, s1, as1) in zip(rows, rows[1:]):
+        resets = self._ipo_reset_times()
+        # A first position observed after a known reset opened from zero.
+        if rows:
+            boundary = bisect.bisect_left(resets, rows[0][0])
+            if boundary and (boundary == len(resets) or rows[0][0] < resets[boundary]):
+                rows.insert(0, (resets[boundary - 1], 0.0, 0.0, 0.0, 0.0))
+        for (t0, o0, a0, s0, as0), (t, o1, a1, s1, as1) in zip(rows, rows[1:]):
             if t < since_ms:
                 continue
             o0, a0, s0, as0, o1, a1, s1, as1 = (v or 0.0 for v in (o0, a0, s0, as0, o1, a1, s1, as1))
+            boundary = bisect.bisect_right(resets, t)
+            if boundary and resets[boundary - 1] > t0:
+                if t == resets[boundary - 1]:
+                    continue  # the first observed state after IPO is a baseline
+                o0 = a0 = s0 = as0 = 0.0
             for kind, d, old_n, old_avg, new_n, new_avg in (
                 ("buy" if o1 > o0 else "sell", o1 - o0, o0, a0, o1, a1),
                 ("short" if s1 > s0 else "cover", s1 - s0, s0, as0, s1, as1),
@@ -695,13 +772,14 @@ class Storage:
             c.executemany("DELETE FROM prices WHERE stock_id=? AND tick=?", doomed[i:i + COMPACT_CHUNK])
             c.commit()
 
-        doomed_snaps, last_bucket, last_id = [], None, None
+        anchors = {r[0] for r in c.execute("SELECT start_ms FROM ipo_runs")}
+        doomed_snaps, last_bucket, last_id, last_ts = [], None, None, None
         for sid_, ts in c.execute("SELECT id, server_ms FROM snapshots WHERE server_ms < ? ORDER BY server_ms, id",
                                   (older_than_ms,)):
             bucket = ts // bucket_ms
-            if bucket == last_bucket:
+            if bucket == last_bucket and last_ts not in anchors and ts not in anchors:
                 doomed_snaps.append((last_id,))
-            last_bucket, last_id = bucket, sid_
+            last_bucket, last_id, last_ts = bucket, sid_, ts
         for i in range(0, len(doomed_snaps), COMPACT_CHUNK):
             c.executemany("DELETE FROM snapshots WHERE id=?", doomed_snaps[i:i + COMPACT_CHUNK])
             c.commit()

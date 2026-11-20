@@ -13,7 +13,7 @@
     el.innerHTML = `
       <div class="jr">
         <div data-role="kpis"></div>
-        <div class="toolbar"><div data-role="range"></div><span class="note">${esc(t("journal.note"))}</span></div>
+        <div class="toolbar"><div data-role="range"></div><select class="in" data-role="ipo" aria-label="${esc(t("ipo.history"))}"><option value="current">${esc(t("ipo.current"))}</option><option value="">${esc(t("ipo.all"))}</option></select><span class="note">${esc(t("journal.note"))}</span></div>
         <div class="jr-grid">
           <section class="panel box"><h2>${esc(t("journal.trades"))}</h2><div data-role="trades" class="grow"></div></section>
           <section class="panel box"><h2>${esc(t("journal.per_stock"))}</h2><div data-role="per" class="grow"></div></section>
@@ -25,6 +25,8 @@
       { key: "avg_win", label: t("journal.avg_win") }, { key: "avg_loss", label: t("journal.avg_loss") },
       { key: "best", label: t("journal.best") }, { key: "worst", label: t("journal.worst") },
     ]);
+    S.ipo = q('[data-role="ipo"]');
+    S.ipo.addEventListener("change", () => { S.last = 0; refresh(); });
     S.range = SS.ui.rangeBar(q('[data-role="range"]'), "24h", () => { S.last = 0; refresh(); });
     S.trades = SS.ui.table(q('[data-role="trades"]'), {
       sortKey: "time", empty: "–", rowClass: (r) => cls(r.pnl),
@@ -53,7 +55,16 @@
   async function refresh() {
     if (Date.now() - S.last < INTERVAL_MS) return;
     S.last = Date.now();
-    const d = await SS.call("journal", S.range.get());
+    const run = S.ipo.value;
+    const d = await SS.call("journal", S.range.get(), run === "" ? null : run === "current" ? run : Number(run));
+    if (run !== S.ipo.value) return;
+    const options = (d?.runs || []).map((count) => `<option value="${count}">${esc(t("ipo.run", { n: count }))}</option>`).join("");
+    const html = `<option value="current">${esc(t("ipo.current"))}</option><option value="">${esc(t("ipo.all"))}</option>${options}`;
+    if (S.ipo.dataset.options !== html) {
+      S.ipo.innerHTML = html;
+      S.ipo.value = run === "" || run === "current" || (d?.runs || []).includes(Number(run)) ? run : "current";
+      S.ipo.dataset.options = html;
+    }
     if (!d || !d.trades) return;
     const k = S.kpis;
     k.set("realized", d.realized != null ? fmt.big(d.realized) : "–", cls(d.realized));

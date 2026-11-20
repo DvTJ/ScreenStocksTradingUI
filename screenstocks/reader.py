@@ -53,7 +53,7 @@ class Player:
     cash: float
     net_worth: float
     level: int
-    ipo_count: int
+    ipo_count: Optional[int]
     next_buy_at_ms: int
     next_short_at_ms: int
     buy_cooldown_s: float
@@ -164,7 +164,7 @@ def parse_market(d: dict) -> MarketSnapshot:
             cash=_float(p.get("cash")),
             net_worth=_float(p.get("netWorth")),
             level=_int(p.get("level")),
-            ipo_count=_int(p.get("ipoCount")),
+            ipo_count=p["ipoCount"] if type(p.get("ipoCount")) is int and p["ipoCount"] >= 0 else None,
             next_buy_at_ms=_int(p.get("nextBuyAtMs")),
             next_short_at_ms=_int(p.get("nextShortAtMs")),
             buy_cooldown_s=_float(p.get("buyCooldownSeconds")),

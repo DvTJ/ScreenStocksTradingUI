@@ -13,7 +13,7 @@
     el.innerHTML = `
       <div class="pf">
         <div data-role="kpis"></div>
-        <div class="toolbar"><div data-role="range"></div></div>
+        <div class="toolbar"><div data-role="range"></div><select class="in" data-role="ipo" aria-label="${esc(t("ipo.history"))}"><option value="current">${esc(t("ipo.current"))}</option><option value="">${esc(t("ipo.all"))}</option></select></div>
         <section class="panel pf-chart" data-role="chart"></section>
         <div class="pf-bottom">
           <section class="panel box"><h2>${esc(t("pf.positions"))}</h2><div data-role="pos" class="grow"></div></section>
@@ -27,6 +27,8 @@
       { key: "pl", label: t("pf.open_pl") }, { key: "div", label: t("pf.div_min") },
       { key: "received", label: t("pf.div_received") },
     ]);
+    S.ipo = q('[data-role="ipo"]');
+    S.ipo.addEventListener("change", () => { S.chart.resetZoom(); refreshAll(); });
     S.range = SS.ui.rangeBar(q('[data-role="range"]'), "1h", () => { S.chart.resetZoom(); refreshAll(); });
     S.chart = SS.ui.lineChart(q('[data-role="chart"]'), {
       series: [{ key: "net", label: t("common.net_worth"), color: "#58a6ff", area: true }, { key: "cash", label: t("common.cash"), color: "#3fb950" }],
@@ -69,7 +71,9 @@
   }
 
   async function refreshChart() {
-    const c = await SS.call("portfolio_chart", S.range.get());
+    const run = S.ipo.value;
+    const c = await SS.call("portfolio_chart", S.range.get(), run === "" ? null : run === "current" ? run : Number(run));
+    if (run !== S.ipo.value) return;
     S.chart.setData({ net: c.net, cash: c.cash }, c.offset);
     S.lastChart = Date.now();
   }
@@ -81,7 +85,16 @@
   }
 
   async function load() {
-    const d = await SS.call("portfolio", S.range.get());
+    const run = S.ipo.value;
+    const d = await SS.call("portfolio", S.range.get(), run === "" ? null : run === "current" ? run : Number(run));
+    if (run !== S.ipo.value) return;
+    const options = (d?.runs || []).map((count) => `<option value="${count}">${esc(t("ipo.run", { n: count }))}</option>`).join("");
+    const html = `<option value="current">${esc(t("ipo.current"))}</option><option value="">${esc(t("ipo.all"))}</option>${options}`;
+    if (S.ipo.dataset.options !== html) {
+      S.ipo.innerHTML = html;
+      S.ipo.value = run === "" || run === "current" || (d?.runs || []).includes(Number(run)) ? run : "current";
+      S.ipo.dataset.options = html;
+    }
     if (!d || d.positions === undefined) return;
     S.kpis.set("net", fmt.big(d.net));
     S.kpis.set("cash", fmt.big(d.cash));

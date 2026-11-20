@@ -14,38 +14,41 @@ def _offset(ms: int) -> int:
     return int(datetime.fromtimestamp(ms / 1000).astimezone().utcoffset().total_seconds())
 
 
-def _window(range_key: str, first: Optional[int], end: Optional[int]) -> Optional[tuple[int, int]]:
-    """Never reach back further than the recorded history (same as Ctx.window in the classic UI)."""
-    if end is None:
-        return None
-    first = first or end
-    secs = RANGES.get(range_key)
-    return (first if secs is None else max(first, end - secs * 1000)), end
+def _ipo_selection(db, run: Optional[int | str]) -> Optional[int]:
+    if run == "current":
+        runs = db.ipo_runs()
+        return runs[0] if runs else None
+    return run
 
 
 class PortfolioApi:
     # ---------------------------------------------------------------- portfolio
 
-    def portfolio(self, range_key: str) -> dict:
+    def portfolio(self, range_key: str, run: Optional[int | str] = None) -> dict:
         """KPIs, positions, position changes and dividend payouts (every second while open)."""
         if self._closing:
             return {}
         with self._lock:
             db = self._db
-            snap = db.latest_snapshot() or {}
+            run = _ipo_selection(db, run)
+            snap = db.latest_snapshot(run) or {}
             net, cash = snap.get("net_worth"), snap.get("cash")
             first = db.conn.execute("SELECT MIN(server_ms) FROM snapshots").fetchone()[0]
-            win = _window(range_key, first, snap.get("server_ms"))
-            factor, count = db.dividend_factor()
+            win = db.history_window(RANGES.get(range_key), first, snap.get("server_ms"), run)
+            start, end = db.ipo_bounds(run)
+            factor, count = db.dividend_factor(since_ms=start, until_ms=end)
             start_net = received = None
             if win:
                 received = db.dividend_sum(*win)
-                start_net = db.snapshot_value_at("net_worth", win[0])
+                start_net = db.snapshot_value_at("net_worth", win[0], since_ms=start)
+                if start_net is None:
+                    rows = db.portfolio_series(*win)
+                    start_net = rows[0][1] if rows else None
             rates = {s["stock_id"]: s.get("dividend_rate") or 0.0 for s in db.stocks()}
             positions, open_pl, div_total = [], 0.0, 0.0
-            for sid, pos in sorted(db.current_positions().items()):
+            for sid, pos in sorted(db.current_positions(end).items()):
                 last = db.latest_price(sid)
-                price = last[1] if last else None
+                price = (last[1] if last else None) if end == 2 ** 62 else db.price_at(sid, snap.get("server_ms", end))
                 owned, avg = pos["shares_owned"], pos["avg_buy_price"]
                 shorted, avg_s = pos["shares_shorted"], pos["avg_short_price"]
                 pl = (price - avg) * owned if price is not None and owned else None
@@ -58,24 +61,26 @@ class PortfolioApi:
                                       pl=pl, plp=(price / avg - 1) * 100 if owned and price and avg else None,
                                       short=shorted, avg_short=avg_s, short_pl=spl, div=div))
             changes = [dict(time=ts, stock=sid, owned=o, avg=a, short=s, avg_short=sa)
-                       for ts, sid, o, a, s, sa in db.position_changes(200)]
-            payouts = [dict(time=ts, amount=amount, factor=f) for ts, amount, f in db.dividends(limit=300)]
+                       for ts, sid, o, a, s, sa in db.position_changes(200, since_ms=start, until_ms=end)]
+            runs = db.ipo_runs()
+            payouts = [dict(time=ts, amount=amount, factor=f) for ts, amount, f in db.dividends(start, end, limit=300)]
         delta = net - start_net if net is not None and start_net is not None else None
-        return {"net": net, "cash": cash, "invested": net - cash if net is not None and cash is not None else None,
+        return {"runs": runs, "net": net, "cash": cash, "invested": net - cash if net is not None and cash is not None else None,
                 "delta": delta, "delta_pct": (net / start_net - 1) * 100 if delta is not None and start_net else None,
                 "open_pl": open_pl if positions else None, "div_min": div_total or None,
                 "received": received or None, "factor": factor, "factor_n": count,
                 "positions": positions, "changes": changes, "payouts": payouts}
 
-    def portfolio_chart(self, range_key: str) -> dict:
+    def portfolio_chart(self, range_key: str, run: Optional[int | str] = None) -> dict:
         """Net worth and cash over the range (snapshot/server time)."""
         if self._closing:
             return {"net": [], "cash": []}
         with self._lock:
             db = self._db
-            snap = db.latest_snapshot() or {}
+            run = _ipo_selection(db, run)
+            snap = db.latest_snapshot(run) or {}
             first = db.conn.execute("SELECT MIN(server_ms) FROM snapshots").fetchone()[0]
-            win = _window(range_key, first, snap.get("server_ms"))
+            win = db.history_window(RANGES.get(range_key), first, snap.get("server_ms"), run)
             rows = db.portfolio_series(*win, max_points=20_000) if win else []
         if not rows:
             return {"net": [], "cash": []}
@@ -115,18 +120,19 @@ class PortfolioApi:
 
     # ------------------------------------------------------------------ journal
 
-    def journal(self, range_key: str) -> dict:
+    def journal(self, range_key: str, run: Optional[int | str] = None) -> dict:
         """Trades with realized P/L (market price at trade time), summary and P/L per stock."""
         if self._closing:
             return {}
         with self._lock:
             db = self._db
-            win = _window(range_key, db.first_time_ms(), db.latest_time_ms())
+            win = db.journal_window(RANGES.get(range_key), _ipo_selection(db, run))
             trades = []
             if win:
                 for sid in db.stock_ids():
                     trades += db.trades(sid, *win)
             dividends = db.dividend_sum(*win) if win else 0.0
+            runs = db.ipo_runs()
         closed = [tr for tr in trades if tr["pnl"] is not None]
         realized = sum(tr["pnl"] for tr in closed)
         wins = [tr["pnl"] for tr in closed if tr["pnl"] > 0]
@@ -143,6 +149,7 @@ class PortfolioApi:
                              price=tr["price"], entry=tr["entry"], pnl=pnl,
                              pnl_pct=pnl / (tr["entry"] * tr["shares"]) * 100 if pnl is not None and tr["entry"] else None))
         return {
+            "runs": runs,
             "realized": realized if closed else None, "dividends": dividends or None,
             "total": (realized + dividends) if closed or dividends else None,
             "closed": len(closed), "wins": len(wins),
