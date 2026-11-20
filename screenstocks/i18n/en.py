@@ -448,6 +448,8 @@ STRINGS = {
     'bot.level.simple': 'Simple',
     'bot.level.medium': 'Medium',
     'bot.level.advanced': 'Advanced',
+    'bot.fixed_buy_size': 'Fixed buy size',
+    'bot.d.fixed_buy_size': 'Buys use the selected percentage of the game’s maximum order, without signal, stop-loss risk or trade-history sizing reductions. At 100%, a buy uses all cash the game allows for that stock.',
     'bot.trade_pct': '% of the max. per trade',
     'bot.d.trade_pct': 'Share of the most the game allows for one order (your cash, or the shares still available for a buy); the bot bets less when the signal is weak.',
     'bot.d.caution': 'Three ready-made risk levels. They share the same tuned signal and differ only in how much one trade may lose (3 % / 10 % / 20 % of your cash) and how many positions can be open.',

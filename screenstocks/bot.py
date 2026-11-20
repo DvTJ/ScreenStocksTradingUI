@@ -8,7 +8,7 @@ Signal   z = (ln price - EMA of ln price) / EMA std-dev   (time constant tau_s)
 Entry    z <= -entry_z -> buy, z >= +entry_z -> short (optional), only when the
          expected move back to the average is at least min_edge_pct, the game's
          cooldown for that action is over and fewer than max_positions are open.
-         Stake = trade_pct scaled by the signal strength (never above trade_pct).
+         Stake = fixed trade_pct for buys when enabled, otherwise scaled by signal and risk.
 Exit     sell/cover (no cooldown) when the price is back at the average
          (|z| <= exit_z), on a stop-loss, or after max_hold_s.
 
@@ -143,6 +143,8 @@ class BotSettings:
     upgrade_payback_min: float = 60.0   # advanced: only upgrades that earn their price back within this many minutes
     upgrade_max_pct: float = 5.0        # advanced: most all upgrade purchases of one hour may cost, in % of the cash
 
+    fixed_buy_size: bool = False
+
     def __post_init__(self):
         if self.level not in LEVELS:
             self.level = "simple"
@@ -218,9 +220,11 @@ def size_pct(trade_pct: int, z: float, entry_z: float) -> int:
 
 
 def stake_pct(trade_pct: int, z: float, p: Params, cash: float, free: float, price: float, available,
-              buying: bool) -> int:
+              buying: bool, *, fixed_buy_size: bool = False) -> int:
     """Percent of the maximum the game allows for one entry: the signal-scaled stake, but never so large that
     a stop-loss (with slippage) would cost more than p.max_loss_pct % of the cash."""
+    if buying and fixed_buy_size:
+        return trade_pct
     pct = size_pct(trade_pct, z, p.entry_z)
     biggest = trade_money(price, 100, free, available, buying)         # money a 100 % order would move
     if biggest > 0:
@@ -432,7 +436,8 @@ def slice_news(news: dict, a: int, b: int) -> dict:
 
 def simulate(grids: dict, per: dict, trade_pct: int, max_positions: int, shorts: bool, buy_cd_s: float = 85,
              short_cd_s: float = 85, latency_s: Optional[int] = None, fee_pct: Optional[float] = None,
-             capital: float = 10000.0, limits: Optional[dict] = None, news: Optional[dict] = None, fees: Optional[dict] = None) -> dict:
+             capital: float = 10000.0, limits: Optional[dict] = None, news: Optional[dict] = None, fees: Optional[dict] = None,
+             *, fixed_buy_size: bool = False) -> dict:
     """Run the Strategy over 1 s price grids. Orders fill latency_s after the signal at that
     second's price; fee_pct (or fees[sid], the measured one) is charged on entry and exit. Each order moves trade_money() of the
     free cash (shares still available for buys included); profits are added to the cash. A stock that
@@ -461,7 +466,8 @@ def simulate(grids: dict, per: dict, trade_pct: int, max_positions: int, shorts:
             fill = grids[sid][i + latency_s]
             if action in ("buy", "short"):
                 free = cash - sum(h["money"] for h in held.values())
-                pct = stake_pct(trade_pct, z, strat.p(sid), cash, free, fill, limits.get(sid), action == "buy")
+                pct = stake_pct(trade_pct, z, strat.p(sid), cash, free, fill, limits.get(sid), action == "buy",
+                                fixed_buy_size=fixed_buy_size)
                 money = trade_money(fill, pct, free, limits.get(sid), action == "buy")
                 if pct < 1 or money <= 0:
                     continue
@@ -516,7 +522,7 @@ def calibrate(grids: dict, s: BotSettings, buy_cd_s: float = 85, short_cd_s: flo
     for sid, g in grids.items():
         def run(p, grid=g):
             r = simulate({sid: grid}, {sid: p}, s.trade_pct, 1, shorts, buy_cd_s, short_cd_s, latency_s=latency_s,
-                         capital=capital, limits=limits, news=news, fees=fees)
+                         capital=capital, limits=limits, news=news, fees=fees, fixed_buy_size=s.fixed_buy_size)
             profit = r["end"] - capital
             worst = min((x["pnl"] for x in r["trades"]), default=0.0)
             rets = [x["ret"] for x in r["trades"]]
@@ -694,7 +700,8 @@ def backtest(db: Storage, s: BotSettings, since_ms: int, until_ms: int, buy_cd_s
     chosen = pick(calib, max_pos)
     per = {sid: params_for(sid, base, calib, s) for sid in chosen}
     res = simulate({sid: grids[sid][mid:] for sid in chosen}, per, s.trade_pct, max_pos, shorts, buy_cd_s, short_cd_s,
-                   capital=capital, limits=limits, news=slice_news(news, mid, n), fees=load_fees(db))
+                   capital=capital, limits=limits, news=slice_news(news, mid, n), fees=load_fees(db),
+                   fixed_buy_size=s.fixed_buy_size)
     res["hours"] = (n - mid) / 3600
     res["stocks"] = chosen
     res["times_ms"] = [x * 1000 for x in secs[mid:]]       # real time of each simulated second
@@ -1076,12 +1083,15 @@ class BotTrader:
         """The expected move back must cover the measured round trip cost of this stock."""
         return replace(p, min_edge_pct=max(p.min_edge_pct, 2 * fee))
 
-    def _stake_pct(self, sid: str, *args) -> int:
+    def _stake_pct(self, sid: str, *args, fixed_buy_size: bool = False) -> int:
         """stake_pct() scaled by what the stock's real trades of this side taught (1 while unknown); args as stake_pct,
         whose last one is `buying`."""
+        pct = stake_pct(*args, fixed_buy_size=fixed_buy_size)
+        if fixed_buy_size and args[-1]:
+            return pct
         c = (self.calib or {}).get(sid)
         trust = c.side_trust.get("long" if args[-1] else "short", c.trust) if c else 1.0
-        return math.floor(stake_pct(*args) * trust + 1e-9)
+        return math.floor(pct * trust + 1e-9)
 
     @staticmethod
     def _saved_pauses(db: Storage) -> dict:
@@ -1221,7 +1231,8 @@ class BotTrader:
         fair, p = st.fair[sid], st.p(sid)
         edge = (fair / price - 1) * 100 if buying else (price / fair - 1) * 100
         cash, free = paper_wallet(load_results(db), held) if s.paper else (snap.get("cash") or 0,) * 2
-        pct = self._stake_pct(sid, s.trade_pct, z, p, cash, free, price, stock["available_shares"], buying)
+        pct = self._stake_pct(sid, s.trade_pct, z, p, cash, free, price, stock["available_shares"], buying,
+                              fixed_buy_size=s.fixed_buy_size)
         if pct < 1:
             return False
         waited = round(now_s - st._since.get(sid, (None, now_s))[1] + 1)
@@ -1261,7 +1272,8 @@ class BotTrader:
         if reason == "entry":
             cash, free = paper_wallet(load_results(db), held)
             buying = action == "buy"
-            pct = self._stake_pct(sid, s.trade_pct, z, self.strategy.p(sid), cash, free, price, stock["available_shares"], buying)
+            pct = self._stake_pct(sid, s.trade_pct, z, self.strategy.p(sid), cash, free, price, stock["available_shares"], buying,
+                              fixed_buy_size=s.fixed_buy_size)
             money = trade_money(price, pct, free, stock["available_shares"], buying)
             if pct < 1 or money <= 0:
                 return
@@ -1277,7 +1289,7 @@ class BotTrader:
     def _send(self, db: Storage, s: BotSettings, sid: str, action: str, reason: str, price: float,
               z: Optional[float], now_s: float, stock: dict, cash: float, close_pct: int = 100) -> bool:
         pct = (self._stake_pct(sid, s.trade_pct, z, self.strategy.p(sid), cash, cash, price, stock["available_shares"],
-                         action == "buy") if reason == "entry" else close_pct)
+                         action == "buy", fixed_buy_size=s.fixed_buy_size) if reason == "entry" else close_pct)
         if reason == "entry" and pct < 1:
             return False                                   # over the risk budget
         known = {r["id"] for r in db.command_results(200)}

@@ -448,6 +448,8 @@ STRINGS = {
     'bot.level.simple': 'Einfach',
     'bot.level.medium': 'Mittel',
     'bot.level.advanced': 'Erweitert',
+    'bot.fixed_buy_size': 'Feste Kaufgröße',
+    'bot.d.fixed_buy_size': 'Käufe verwenden den eingestellten Anteil der maximalen Ordergröße ohne Abschläge für Signal, Stop-Loss-Risiko oder Handelshistorie. Bei 100 % wird das gesamte für die Aktie verfügbare Bargeld eingesetzt.',
     'bot.trade_pct': '% des Maximums pro Trade',
     'bot.d.trade_pct': 'Anteil des Maximums, das das Spiel für eine Order erlaubt (dein Cash, bei Käufen die noch verfügbaren Aktien); bei schwachem Signal setzt der Bot weniger.',
     'bot.d.caution': 'Drei fertige Risikostufen. Sie teilen dasselbe optimierte Signal und unterscheiden sich nur im möglichen Verlust eines Trades (3 % / 10 % / 20 % deines Cashs) und in der Zahl offener Positionen.',

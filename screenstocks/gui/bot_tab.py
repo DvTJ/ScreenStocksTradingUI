@@ -66,6 +66,7 @@ class BotTab(ttk.Frame):
         self.level = tk.StringVar()
         self.caution = tk.StringVar()
         self.trade_pct = tk.StringVar()
+        self.fixed_buy_size = tk.BooleanVar(value=s.fixed_buy_size)
         self.max_positions = tk.StringVar()
         self.recalib = tk.StringVar()
         self.loss_limit = tk.StringVar()
@@ -96,7 +97,11 @@ class BotTab(ttk.Frame):
         self.row_simple = ttk.Frame(card, style="Card.TFrame")
         self.row_simple.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         self._field(self.row_simple, "bot.trade_pct", self.trade_pct, "trade_pct", 1, 100, 1)
-        ttk.Label(self.row_simple, text=t("bot.d.trade_pct"), style="CardMuted.TLabel").pack(side="left", padx=8)
+        sizing = ttk.Checkbutton(self.row_simple, text=t("bot.fixed_buy_size"),
+                                 variable=self.fixed_buy_size, command=self._save)
+        sizing.pack(side="left", padx=8)
+        ttk.Label(self.row_simple, text=t("bot.d.fixed_buy_size"),
+                  style="CardMuted.TLabel", wraplength=420).pack(side="left", padx=4)
 
         self.row_medium = ttk.Frame(card, style="Card.TFrame")
         self.row_medium.grid(row=2, column=0, sticky="ew", pady=(6, 0))
@@ -228,6 +233,7 @@ class BotTab(ttk.Frame):
         self.level.set(t(f"bot.level.{s.level}"))
         self.caution.set(t(f"bot.caution.{s.caution}"))
         self.trade_pct.set(str(s.trade_pct))
+        self.fixed_buy_size.set(s.fixed_buy_size)
         self.max_positions.set(str(s.max_positions))
         self.recalib.set(str(s.recalib_min))
         self.loss_limit.set(f"{s.loss_limit_pct:g}")
@@ -264,6 +270,7 @@ class BotTab(ttk.Frame):
             if v is not None and v != self.shown.get(k) and (v > 0 or k == "exit_z"):
                 overrides[k] = v
         return bot.BotSettings(
+            fixed_buy_size=bool(self.fixed_buy_size.get()),
             enabled=bool(self.enabled.get()), paper=bool(self.paper.get()), trade_events=bool(self.trade_events.get()), level=level, trade_pct=num(self.trade_pct, old.trade_pct),
             caution=caution, max_positions=num(self.max_positions, old.max_positions),
             shorts=bool(self.shorts.get()), recalib_min=num(self.recalib, old.recalib_min),
@@ -277,6 +284,7 @@ class BotTab(ttk.Frame):
             bot.save_settings(self.app.db, s)
         self._fill_params(s, force=True)
         self.trade_pct.set(str(s.trade_pct))
+        self.fixed_buy_size.set(s.fixed_buy_size)
         self.max_positions.set(str(s.max_positions))
         self.recalib.set(str(s.recalib_min))
         self.loss_limit.set(f"{s.loss_limit_pct:g}")
