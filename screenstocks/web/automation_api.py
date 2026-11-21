@@ -6,12 +6,13 @@ AutomationTab exactly; the engine itself (automation.py / events.py) is unchange
 
 import math
 import time
+from uuid import uuid4
 from dataclasses import asdict, fields
 from typing import Optional
 
 import webview
 
-from .. import config_io
+from .. import automation_setups as setups, config_io, game_bridge
 from ..automation import (EXIT_KINDS, KIND_KEYS, MODE_KEYS, SIDE_KEYS, TRAILING_ENTRY, activation_reached,
                           condition_met, describe_trigger,
                           has_position, kind_name, mode_name, needs_position, round_help, side_name,
@@ -34,6 +35,50 @@ def _num(value) -> float:
 
 
 class AutomationApi:
+    def automation_setups(self) -> dict:
+        with self._lock:
+            if self._closing or self._db is None:
+                return {}
+            cfg = setups.config(self._db)
+            state = setups.load(self._db, setups.STATE, {})
+            pending = setups.load(self._db, setups.MANUAL, {})
+            return {
+                **cfg, "active": state.get("active"), "error": self._engine.setups.error,
+                "pending": pending.get("name") if pending.get("id") != state.get("manual") else None,
+            }
+
+    def automation_setup_options(self, enabled: bool, metric: str, switch_back: bool) -> dict:
+        if metric not in ("cash", "net_worth"):
+            return {"error": "Select cash or net worth"}
+        with self._lock:
+            cfg = setups.config(self._db)
+            cfg.update(enabled=bool(enabled), metric=metric, switch_back=bool(switch_back))
+            setups.save(self._db, setups.CONFIG, cfg)
+        return {"ok": True}
+
+    def automation_setup_save(self, name: str, minimum: str, capture_bot: bool, capture_game: bool) -> dict:
+        try:
+            actions = setups.capture_actions() if capture_game else None
+            with self._lock:
+                setups.save_profile(self._db, name, minimum, capture_bot, actions)
+        except (ValueError, game_bridge.BridgeError) as exc:
+            return {"error": str(exc)}
+        return {"ok": True}
+
+    def automation_setup_apply(self, name: str) -> dict:
+        with self._lock:
+            if name not in setups.config(self._db)["profiles"]:
+                return {"error": "Select a saved setup"}
+            setups.save(self._db, setups.MANUAL, {"name": name, "id": uuid4().hex})
+        return {"ok": True}
+
+    def automation_setup_delete(self, name: str) -> dict:
+        with self._lock:
+            cfg = setups.config(self._db)
+            cfg["profiles"].pop(name, None)
+            setups.save(self._db, setups.CONFIG, cfg)
+        return {"ok": True}
+
     # ------------------------------------------------------------------ helpers
 
     def _now_ms(self) -> int:

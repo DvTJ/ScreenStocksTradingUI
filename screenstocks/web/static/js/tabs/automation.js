@@ -66,6 +66,30 @@
 
         <div class="auto-right">
           <section class="panel card">
+            <h2>${esc(t("setups.title"))}</h2>
+            <div class="ev-switches">
+              <label class="switch"><input type="checkbox" data-setup="enabled"><span class="track"></span>${esc(t("setups.automatic"))}</label>
+              <label class="switch"><input type="checkbox" data-setup="switch_back"><span class="track"></span>${esc(t("setups.switch_back"))}</label>
+              <select class="in" data-setup="metric" aria-label="${esc(t("setups.metric"))}">
+                <option value="net_worth">${esc(t("common.net_worth"))}</option><option value="cash">${esc(t("common.cash"))}</option>
+              </select>
+            </div>
+            <div class="rform">
+              <label class="field">${esc(t("setups.saved"))}<select class="in" data-setup="select"></select></label>
+              <label class="field">${esc(t("setups.name"))}<input class="in" data-setup="name" maxlength="80"></label>
+              <label class="field">${esc(t("setups.minimum"))}<input class="in" data-setup="minimum" placeholder="1Qi"></label>
+              <label class="switch"><input type="checkbox" data-setup="bot" checked><span class="track"></span>${esc(t("setups.capture_bot"))}</label>
+              <label class="switch"><input type="checkbox" data-setup="game"><span class="track"></span>${esc(t("setups.capture_game"))}</label>
+            </div>
+            <div class="rform-actions">
+              <button class="btn primary" data-setup="save">${esc(t("setups.save"))}</button>
+              <button class="btn ghost" data-setup="apply">${esc(t("setups.apply"))}</button>
+              <button class="btn ghost" data-setup="delete">${esc(t("setups.delete"))}</button>
+            </div>
+            <div class="rhelp" role="status" data-setup="status"></div>
+            <div class="hint">${esc(t("setups.help"))}</div>
+          </section>
+          <section class="panel card">
             <h2>${esc(t("event.title"))}</h2>
             <div class="ev-switches">
               <label class="switch"><input type="checkbox" data-ev="pumps"><span class="track"></span>${esc(t("event.switch_pumps"))}</label>
@@ -103,6 +127,57 @@
     q('[data-role="cancel"]').onclick = cancelEdit;
     q('[data-role="use-price"]').onclick = usePrice;
     q('[data-role="rules"]').onclick = onRuleAction;
+    for (const key of ["enabled", "switch_back", "metric"]) {
+      setup(key).onchange = () => setupCommand("options", setup("enabled").checked,
+        setup("metric").value, setup("switch_back").checked);
+    }
+    setup("select").onchange = () => {
+      const name = setup("select").value;
+      setup("name").value = name;
+      setup("minimum").value = S.setups?.profiles[name]?.minimum ?? "";
+    };
+    setup("save").onclick = async () => {
+      const name = setup("name").value.trim();
+      if (await setupCommand("save", name, setup("minimum").value.trim(),
+        setup("bot").checked, setup("game").checked)) setup("select").value = name;
+    };
+    setup("apply").onclick = () => setupCommand("apply", setup("select").value);
+    setup("delete").onclick = () => {
+      if (setup("select").value) setupCommand("delete", setup("select").value);
+    };
+  }
+
+  const setup = (name) => q(`[data-setup="${name}"]`);
+
+  async function setupCommand(method, ...args) {
+    if (S.setupBusy) return false;
+    S.setupBusy = true;
+    try {
+      const res = await SS.call(`automation_setup_${method}`, ...args);
+      S.setupError = res?.error || "";
+      return !!res?.ok;
+    } catch (error) {
+      S.setupError = String(error);
+      return false;
+    } finally {
+      S.setupBusy = false;
+      await refreshSetups();
+    }
+  }
+
+  async function refreshSetups() {
+    if (S.setupBusy) return;
+    const cfg = await SS.call("automation_setups");
+    if (!cfg?.profiles || S.setupBusy) return;
+    S.setups = cfg;
+    const names = Object.keys(cfg.profiles);
+    fillSelect(setup("select"), Object.fromEntries([["", t("setups.choose")], ...names.map((name) => [name, name])]));
+    setup("enabled").checked = cfg.enabled;
+    setup("switch_back").checked = cfg.switch_back;
+    setup("metric").value = cfg.metric;
+    setup("status").textContent = S.setupError || cfg.error || (cfg.pending
+      ? t("setups.pending", { name: cfg.pending })
+      : cfg.active ? t("setups.active", { name: cfg.active }) : "");
   }
 
   const f = (name) => q(`[data-f="${name}"]`);
@@ -362,6 +437,7 @@
     renderRules(d.rules);
     renderEvents(d.events, d.now);
     renderLog(d.log);
+    await refreshSetups();
   }
   const refreshNow = () => refresh().catch((e) => console.error(e));
 
