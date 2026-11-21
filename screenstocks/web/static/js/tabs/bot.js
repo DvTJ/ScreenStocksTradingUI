@@ -44,6 +44,9 @@
             <div class="field only-medium"><label>${esc(t("bot.max_positions"))} ${info("max_positions")}</label><input class="in num" type="number" min="1" max="10" data-f="max_positions"></div>
             <label class="switch only-medium"><input type="checkbox" data-f="shorts"><span class="track"></span>${esc(t("bot.shorts"))} ${info("shorts")}</label>
             <label class="switch only-medium"><input type="checkbox" data-f="trade_events"><span class="track"></span>${esc(t("bot.trade_events"))} ${info("trade_events")}</label>
+            <label class="switch"><input type="checkbox" data-f="upgrades_only"><span class="track"></span>${esc(t("bot.upgrades_only"))} ${info("upgrades_only")}</label>
+            <label class="switch ${hideExt}"><input type="checkbox" data-f="repeat_upgrades"><span class="track"></span>${esc(t("bot.repeat_upgrades"))} ${info("repeat_upgrades")}</label>
+            <div class="field ${hideExt}"><label>${esc(t("bot.upgrades_per_pass"))}</label><input class="in num" type="number" min="1" max="1000" data-f="upgrades_per_pass"></div>
             <label class="switch ${hideExt}"><input type="checkbox" data-f="buy_upgrades"><span class="track"></span>${esc(t("bot.buy_upgrades"))} ${info("buy_upgrades")}
               <span class="upg-state" data-role="upg-state"></span></label>
           </div>
@@ -155,6 +158,8 @@
       caution: f("caution").value, max_positions: parse(f("max_positions").value) ?? S.settings.max_positions,
       shorts: f("shorts").checked, trade_events: f("trade_events").checked, recalib_min: parse(f("recalib_min").value) ?? S.settings.recalib_min,
       loss_limit_pct: parse(f("loss_limit_pct").value) ?? S.settings.loss_limit_pct,
+      upgrades_only: f("upgrades_only").checked, repeat_upgrades: f("repeat_upgrades").checked,
+      upgrades_per_pass: parse(f("upgrades_per_pass").value) ?? S.settings.upgrades_per_pass,
       buy_upgrades: f("buy_upgrades").checked,
       upgrade_payback_min: parse(f("upgrade_payback_min").value) ?? S.settings.upgrade_payback_min,
       upgrade_max_pct: parse(f("upgrade_max_pct").value) ?? S.settings.upgrade_max_pct,
@@ -189,6 +194,8 @@
     };
     set("enabled", s.enabled); set("paper", s.paper); set("level", s.level); set("trade_pct", s.trade_pct); set("caution", s.caution);
     set("max_positions", s.max_positions); set("shorts", s.shorts); set("trade_events", s.trade_events); set("recalib_min", s.recalib_min); set("loss_limit_pct", s.loss_limit_pct);
+    set("upgrades_only", Boolean(s.upgrades_only)); set("repeat_upgrades", Boolean(s.repeat_upgrades));
+    set("upgrades_per_pass", s.upgrades_per_pass ?? 25);
     set("buy_upgrades", s.buy_upgrades); set("upgrade_payback_min", s.upgrade_payback_min); set("upgrade_max_pct", s.upgrade_max_pct);
     q(".bot").dataset.level = s.level;
     for (const k of PARAMS) {

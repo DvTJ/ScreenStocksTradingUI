@@ -80,3 +80,41 @@ def test_paper_mode_and_switched_off_never_check():
         assert not buyer._busy
     buyer.step(BotSettings(enabled=True, buy_upgrades=True), True, True)
     assert not buyer._busy, "not after the loss limit"
+
+
+def test_repeat_refreshes_level_price_and_budget_and_honors_cap(tmp_path, monkeypatch):
+    class Bridge:
+        def __init__(self):
+            self.level = 0
+            self.cash = 1000
+
+        def upgrades(self):
+            return [{**CATALOG[3], "currentLevel": self.level, "nextPrice": 100 * (self.level + 1)}]
+
+        def request(self, method):
+            assert method == "state.snapshot"
+            return {"cash": self.cash}
+
+        def purchase(self, upgrade_id, quantity):
+            assert upgrade_id == "IncomePerMinute" and quantity == 1
+            self.cash -= 100 * (self.level + 1)
+            self.level += 1
+            return {"levelBefore": self.level - 1, "levelAfter": self.level}
+
+    for name, repeat, cap, budget, expected in [
+        ("legacy", False, 25, 100, 1),
+        ("cap", True, 2, 100, 2),
+        ("budget", True, 25, 30, 1),
+    ]:
+        path = tmp_path / name
+        db = ub.Storage(path)
+        config = BotSettings(enabled=True, buy_upgrades=True, repeat_upgrades=repeat,
+                             upgrades_per_pass=cap, upgrade_max_pct=budget)
+        ub.bot.save_settings(db, config)
+        db.close()
+        buyer = ub.UpgradeBuyer(path)
+        bridge = Bridge()
+        monkeypatch.setattr(buyer, "_client_for_game", lambda: bridge)
+        buyer._allowed_settings = config
+        buyer._run(config)
+        assert bridge.level == expected
