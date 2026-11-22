@@ -62,6 +62,10 @@ class BotTab(ttk.Frame):
         self.enabled = tk.BooleanVar(value=s.enabled)
         self.shorts = tk.BooleanVar(value=s.shorts)
         self.paper = tk.BooleanVar(value=s.paper)
+        self.upgrades_only = tk.BooleanVar()
+        self.buy_upgrades = tk.BooleanVar()
+        self.repeat_upgrades = tk.BooleanVar()
+        self.upgrades_per_pass = tk.StringVar()
         self.trade_events = tk.BooleanVar(value=s.trade_events)
         self.level = tk.StringVar()
         self.caution = tk.StringVar()
@@ -110,6 +114,17 @@ class BotTab(ttk.Frame):
         Tip(self.row_medium, t("bot.d.shorts")).label.pack(side="left")
         self._check(self.row_medium, t("bot.trade_events"), self.trade_events).pack(side="left", padx=(16, 4))
         Tip(self.row_medium, t("bot.d.trade_events")).label.pack(side="left")
+
+        upgrade_row = ttk.Frame(card, style="Card.TFrame")
+        upgrade_row.grid(row=5, column=0, sticky="w", pady=(6, 0))
+        for key in ("upgrades_only", "buy_upgrades"):
+            self._check(upgrade_row, t(f"bot.{key}"), getattr(self, key), self._save).pack(side="left", padx=4)
+            Tip(upgrade_row, t(f"bot.d.{key}")).label.pack(side="left")
+        self.upgrade_options = ttk.Frame(card, style="Card.TFrame")
+        self.upgrade_options.grid(row=6, column=0, sticky="w", pady=(6, 0))
+        self._check(self.upgrade_options, t("bot.repeat_upgrades"), self.repeat_upgrades, self._save).pack(side="left", padx=4)
+        Tip(self.upgrade_options, t("bot.d.repeat_upgrades")).label.pack(side="left", padx=4)
+        self._field(self.upgrade_options, "bot.upgrades_per_pass", self.upgrades_per_pass, "upgrades_per_pass", 1, 1000, 1)
 
         self.adv_btn = ttk.Button(card, command=self._toggle_adv)
         self.adv_btn.grid(row=3, column=0, sticky="w", pady=(8, 0))
@@ -224,6 +239,10 @@ class BotTab(ttk.Frame):
         self.enabled.set(s.enabled)
         self.shorts.set(s.shorts)
         self.paper.set(s.paper)
+        self.upgrades_only.set(s.upgrades_only)
+        self.buy_upgrades.set(s.buy_upgrades)
+        self.repeat_upgrades.set(s.repeat_upgrades)
+        self.upgrades_per_pass.set(str(s.upgrades_per_pass))
         self.trade_events.set(s.trade_events)
         self.level.set(t(f"bot.level.{s.level}"))
         self.caution.set(t(f"bot.caution.{s.caution}"))
@@ -263,7 +282,11 @@ class BotTab(ttk.Frame):
             v = num(self.params[k], self.shown.get(k), float)
             if v is not None and v != self.shown.get(k) and (v > 0 or k == "exit_z"):
                 overrides[k] = v
-        return bot.BotSettings(
+        from dataclasses import replace
+
+        return replace(old, upgrades_only=self.upgrades_only.get(), buy_upgrades=self.buy_upgrades.get(),
+            repeat_upgrades=self.repeat_upgrades.get(),
+            upgrades_per_pass=num(self.upgrades_per_pass, old.upgrades_per_pass),
             enabled=bool(self.enabled.get()), paper=bool(self.paper.get()), trade_events=bool(self.trade_events.get()), level=level, trade_pct=num(self.trade_pct, old.trade_pct),
             caution=caution, max_positions=num(self.max_positions, old.max_positions),
             shorts=bool(self.shorts.get()), recalib_min=num(self.recalib, old.recalib_min),
@@ -369,12 +392,14 @@ class BotTab(ttk.Frame):
             self.row_medium.grid_remove()
         else:
             self.row_medium.grid()
-        if level == "advanced":
-            self.adv_btn.grid()
-            self.adv_btn.configure(text=t("bot.advanced_open" if self.adv_open else "bot.advanced"))
-            self.adv.grid() if self.adv_open else self.adv.grid_remove()
+        self.adv_btn.configure(text=t("bot.advanced_open" if self.adv_open else "bot.advanced"))
+        if self.adv_open:
+            self.upgrade_options.grid()
         else:
-            self.adv_btn.grid_remove()
+            self.upgrade_options.grid_remove()
+        if level == "advanced" and self.adv_open:
+            self.adv.grid()
+        else:
             self.adv.grid_remove()
 
     def _reset_auto(self) -> None:

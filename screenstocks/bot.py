@@ -139,6 +139,9 @@ class BotSettings:
     recalib_min: int = 10        # advanced: minutes between calibrations
     loss_limit_pct: float = 3.0  # advanced: no new trades once the bot lost this % of the cash since activation (0 = off)
     overrides: dict = field(default_factory=dict)     # advanced: Params fields set by hand (else calibrated)
+    upgrades_only: bool = False  # manage existing bot positions without opening new ones
+    repeat_upgrades: bool = False
+    upgrades_per_pass: int = 25
     buy_upgrades: bool = False   # buy game upgrades that pay for themselves (upgrade extension, upgrade_buyer.py)
     upgrade_payback_min: float = 60.0   # advanced: only upgrades that earn their price back within this many minutes
     upgrade_max_pct: float = 5.0        # advanced: most all upgrade purchases of one hour may cost, in % of the cash
@@ -152,6 +155,7 @@ class BotSettings:
         self.max_positions = min(10, max(1, int(self.max_positions)))
         self.recalib_min = min(240, max(1, int(self.recalib_min)))
         self.loss_limit_pct = min(100.0, max(0.0, float(self.loss_limit_pct)))
+        self.upgrades_per_pass = min(1000, max(1, int(self.upgrades_per_pass)))
         self.upgrade_payback_min = min(100000.0, max(1.0, float(self.upgrade_payback_min)))
         self.upgrade_max_pct = min(100.0, max(0.01, float(self.upgrade_max_pct)))
         self.excluded = sorted({str(x) for x in self.excluded})
@@ -1139,7 +1143,7 @@ class BotTrader:
         self.loss_limit_hit = loss_limit_reached(load_results(db), s.loss_limit_pct) if s.enabled else False
         if s.enabled and live and self.allowed is None:
             self._say("", "learning", now_s)
-        if not ((enabled or s.paper) and live and s.enabled and self.allowed is not None):
+        if not ((enabled or s.paper) and live and s.enabled and (self.allowed is not None or (s.upgrades_only and held))):
             return
         why: dict[str, tuple] = {}                  # stock -> (code, args): why the bot stays out of it
         for sid, until in self._blocked.items():
@@ -1150,7 +1154,7 @@ class BotTrader:
         for sid in s.excluded:
             why.setdefault(sid, ("excluded", {}))
         for sid in stocks:
-            if sid not in self.allowed:
+            if sid not in (self.allowed or set()):
                 why.setdefault(sid, ("unproven", {}))
         if not s.paper:
             for sid in positions:
@@ -1199,7 +1203,7 @@ class BotTrader:
                 continue
             if reason == "entry" and action in armed:          # keep the cooldown free for the user's own limit rule
                 continue
-            if reason == "entry" and self.loss_limit_hit:      # closing positions stays allowed
+            if reason == "entry" and (s.upgrades_only or self.loss_limit_hit):      # closing positions stays allowed
                 continue
             if reason == "entry" and not self._decision(db, s, held, sid, action, prices[sid], z, now_s, stocks[sid], snap):
                 continue                                       # over the risk budget: nothing to announce, nothing to send
