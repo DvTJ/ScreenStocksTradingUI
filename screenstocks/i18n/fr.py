@@ -469,6 +469,7 @@ STRINGS = {
     'bot.level.simple': 'Simple',
     'bot.level.medium': 'Médium',
     'bot.level.advanced': 'Avancé',
+    'setups.sections': 'Sections d’automatisation',
     'setups.title': 'Profils d’automatisation',
     'setups.automatic': 'Changer automatiquement',
     'setups.switch_back': 'Revenir au profil précédent si le solde baisse',

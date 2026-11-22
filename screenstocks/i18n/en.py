@@ -448,6 +448,7 @@ STRINGS = {
     'bot.level.simple': 'Simple',
     'bot.level.medium': 'Medium',
     'bot.level.advanced': 'Advanced',
+    'setups.sections': 'Automation sections',
     'setups.title': 'Automation setups',
     'setups.automatic': 'Switch automatically',
     'setups.switch_back': 'Switch back when balance falls',

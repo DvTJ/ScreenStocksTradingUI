@@ -448,6 +448,7 @@ STRINGS = {
     'bot.level.simple': 'Einfach',
     'bot.level.medium': 'Mittel',
     'bot.level.advanced': 'Erweitert',
+    'setups.sections': 'Automatisierungsbereiche',
     'setups.title': 'Automatisierungsprofile',
     'setups.automatic': 'Automatisch wechseln',
     'setups.switch_back': 'Bei sinkendem Guthaben zurückwechseln',

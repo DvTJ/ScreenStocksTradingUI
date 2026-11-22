@@ -3,12 +3,13 @@
 
 (() => {
   const { t, fmt, esc, cls } = SS;
-  const S = { el: null, data: null, editId: null, previewTimer: null, sigRules: "", sigEvents: "", sigLog: "", sigEvStocks: "", eventsInit: false };
+  const S = { el: null, data: null, editId: null, previewTimer: null, sigRules: "", sigEvents: "", sigLog: "", sigEvStocks: "", eventsInit: false, section: "rules" };
   const q = (sel) => S.el.querySelector(sel);
   const PUMP = ["pump_buy_pct", "pump_drop_pct", "pump_start_share", "pump_target_share", "pump_safety_s", "pump_short_pct",
     "pump_cover_pct", "pump_cover_max_s"];
   const CRASH = ["crash_minutes", "crash_short_pct", "crash_target_pct", "crash_rise_pct", "crash_safety_s", "crash_rebuy_pct",
     "crash_rebuy_margin_pct", "crash_hold_stop_pct", "crash_hold_target_share", "crash_hold_max_min"];
+  const SECTIONS = { rules: "auto.rules", setups: "setups.title", events: "event.title", activity: "auto.log" };
   const SWITCHES = ["pumps", "crashes", "fund_events"];
 
   // ------------------------------------------------------------------ layout
@@ -23,7 +24,12 @@
           <span class="hint">${esc(t("web.auto.engine_hint"))}</span>
         </div>
 
-        <div class="auto-left">
+        <div class="auto-sections" role="group" aria-label="${esc(t("setups.sections"))}">
+          ${Object.entries(SECTIONS).map(([key, label]) => `<button type="button" class="btn ghost"
+            data-auto-section="${key}">${esc(t(label))}</button>`).join("")}
+        </div>
+
+        <div class="auto-page auto-left" data-auto-page="rules">
           <section class="panel card">
             <h2><span data-role="form-title">${esc(t("web.auto.new_rule"))}</span><span class="editing-tag" data-role="editing"></span></h2>
             <div class="rform">
@@ -64,17 +70,16 @@
           </section>
         </div>
 
-        <div class="auto-right">
-          <section class="panel card">
-            <h2>${esc(t("setups.title"))}</h2>
-            <div class="ev-switches">
+        <div class="auto-page" data-auto-page="setups" hidden>
+          <section class="panel card setup-card">
+            <div class="setup-options">
               <label class="switch"><input type="checkbox" data-setup="enabled"><span class="track"></span>${esc(t("setups.automatic"))}</label>
               <label class="switch"><input type="checkbox" data-setup="switch_back"><span class="track"></span>${esc(t("setups.switch_back"))}</label>
               <select class="in" data-setup="metric" aria-label="${esc(t("setups.metric"))}">
                 <option value="net_worth">${esc(t("common.net_worth"))}</option><option value="cash">${esc(t("common.cash"))}</option>
               </select>
             </div>
-            <div class="rform">
+            <div class="setup-form">
               <label class="field">${esc(t("setups.saved"))}<select class="in" data-setup="select"></select></label>
               <label class="field">${esc(t("setups.name"))}<input class="in" data-setup="name" maxlength="80"></label>
               <label class="field">${esc(t("setups.minimum"))}<input class="in" data-setup="minimum" placeholder="1Qi"></label>
@@ -89,8 +94,9 @@
             <div class="rhelp" role="status" data-setup="status"></div>
             <div class="hint">${esc(t("setups.help"))}</div>
           </section>
+        </div>
+        <div class="auto-page" data-auto-page="events" hidden>
           <section class="panel card">
-            <h2>${esc(t("event.title"))}</h2>
             <div class="ev-switches">
               <label class="switch"><input type="checkbox" data-ev="pumps"><span class="track"></span>${esc(t("event.switch_pumps"))}</label>
               <label class="switch"><input type="checkbox" data-ev="crashes"><span class="track"></span>${esc(t("event.switch_crashes"))}</label>
@@ -107,13 +113,18 @@
             </details>
             <div class="ev-list" data-role="events"></div>
           </section>
+        </div>
+        <div class="auto-page auto-activity" data-auto-page="activity" hidden>
           <section class="panel card log-card">
-            <h2>${esc(t("auto.log"))}</h2>
             <div class="log-list" data-role="log"></div>
           </section>
         </div>
       </div>`;
 
+    el.querySelectorAll("[data-auto-section]").forEach((button) => {
+      button.onclick = () => { showSection(button.dataset.autoSection); refreshNow(); };
+    });
+    showSection(S.section);
     q('[data-role="master"]').onchange = async (e) => { await SS.call("set_master", e.target.checked); refreshNow(); };
     el.querySelectorAll("[data-ev]").forEach((cb) => (cb.onchange = saveEvents));
     el.querySelectorAll("[data-param]").forEach((inp) => (inp.onchange = saveEvents));
@@ -145,6 +156,16 @@
     setup("delete").onclick = () => {
       if (setup("select").value) setupCommand("delete", setup("select").value);
     };
+  }
+
+  function showSection(section) {
+    S.section = section;
+    S.el.querySelectorAll("[data-auto-section]").forEach((button) => {
+      button.setAttribute("aria-pressed", button.dataset.autoSection === section);
+    });
+    S.el.querySelectorAll("[data-auto-page]").forEach((page) => {
+      page.hidden = page.dataset.autoPage !== section;
+    });
   }
 
   const setup = (name) => q(`[data-setup="${name}"]`);
