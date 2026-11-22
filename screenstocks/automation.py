@@ -25,6 +25,7 @@ from .gui import fmt
 from .i18n import keys as text_keys, t, variants
 from .storage import Storage
 from .upgrade_buyer import UpgradeBuyer
+from .automation_setups import SetupSwitcher
 
 log = logging.getLogger(__name__)
 
@@ -255,6 +256,7 @@ class AutomationEngine(threading.Thread):
         self.state = "starting"                     # starting / active / paused / not_live
         self.events = EventTrader(writer)           # announced pumps / crashes (events.py)
         self.bot = BotTrader(writer)                # mean-reversion bot (bot.py)
+        self.setups = SetupSwitcher(db_path)
         self.upgrades = UpgradeBuyer(db_path)       # the bot's upgrade purchases (upgrade_buyer.py)
 
     def stop(self) -> None:
@@ -342,6 +344,10 @@ class AutomationEngine(threading.Thread):
 
         ev_settings = load_event_settings(db)
         self.events.step(db, ev_settings, live, enabled, server_now, prices, positions, snap)
+        try:
+            self.setups.step(db, live, enabled, snap)
+        except Exception:
+            log.exception("automation setup error")
         try:
             bot_settings = load_bot_settings(db)
             self.bot.step(db, bot_settings, live, enabled, now, server_now,

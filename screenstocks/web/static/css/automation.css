@@ -1,6 +1,6 @@
 /* Automation tab */
 
-.auto { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 450px; grid-template-rows: auto minmax(0, 1fr); gap: var(--gap); }
+.auto { height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--gap); }
 .auto-top {
   grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 10px 16px;
 }
@@ -10,13 +10,23 @@
   background: rgba(210, 153, 34, .14); color: var(--warn);
 }
 .badge.ok { background: rgba(63, 185, 80, .14); color: var(--up); }
-.auto-left, .auto-right { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; }
+.auto-sections { display: flex; flex-wrap: wrap; gap: 6px; }
+.auto-sections button[aria-pressed="true"] { color: var(--accent); background: var(--panel); }
+.auto-page { min-width: 0; min-height: 0; overflow: auto; }
+.auto-page[hidden] { display: none; }
+.auto-left, .auto-activity { display: flex; flex-direction: column; gap: var(--gap); }
+.setup-card { max-width: 860px; }
+.setup-options { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin-bottom: 16px; }
+.setup-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px 14px; align-items: end; }
+.setup-form .switch { align-self: center; }
+
 .card { padding: 14px 16px; }
 .card h2 { margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
 .card h2 .spacer { flex: 1; }
 
 /* rule form */
 .rform { display: grid; grid-template-columns: 110px 150px 100px minmax(170px, 1fr) 110px 90px 110px; gap: 10px 12px; align-items: end; }
+@media (max-width: 960px) { .rform { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); } }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field .pair { display: flex; gap: 6px; }
 .rform-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
@@ -31,7 +41,7 @@
 .rules-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 /* events */
-.ev-switches { display: flex; gap: 22px; margin-bottom: 8px; }
+.ev-switches { display: flex; flex-wrap: wrap; gap: 12px 22px; margin-bottom: 8px; }
 details.params summary { cursor: pointer; color: var(--muted); font-size: 12px; list-style: none; margin: 4px 0; }
 details.params summary::before { content: "▸ "; }
 details.params[open] summary::before { content: "▾ "; }
