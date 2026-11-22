@@ -117,10 +117,14 @@ class BotTab(ttk.Frame):
 
         upgrade_row = ttk.Frame(card, style="Card.TFrame")
         upgrade_row.grid(row=5, column=0, sticky="w", pady=(6, 0))
-        for key in ("upgrades_only", "buy_upgrades", "repeat_upgrades"):
+        for key in ("upgrades_only", "buy_upgrades"):
             self._check(upgrade_row, t(f"bot.{key}"), getattr(self, key), self._save).pack(side="left", padx=4)
             Tip(upgrade_row, t(f"bot.d.{key}")).label.pack(side="left")
-        self._field(upgrade_row, "bot.upgrades_per_pass", self.upgrades_per_pass, "upgrades_per_pass", 1, 1000, 1)
+        self.upgrade_options = ttk.Frame(card, style="Card.TFrame")
+        self.upgrade_options.grid(row=6, column=0, sticky="w", pady=(6, 0))
+        self._check(self.upgrade_options, t("bot.repeat_upgrades"), self.repeat_upgrades, self._save).pack(side="left", padx=4)
+        Tip(self.upgrade_options, t("bot.d.repeat_upgrades")).label.pack(side="left", padx=4)
+        self._field(self.upgrade_options, "bot.upgrades_per_pass", self.upgrades_per_pass, "upgrades_per_pass", 1, 1000, 1)
 
         self.adv_btn = ttk.Button(card, command=self._toggle_adv)
         self.adv_btn.grid(row=3, column=0, sticky="w", pady=(8, 0))
@@ -388,12 +392,14 @@ class BotTab(ttk.Frame):
             self.row_medium.grid_remove()
         else:
             self.row_medium.grid()
-        if level == "advanced":
-            self.adv_btn.grid()
-            self.adv_btn.configure(text=t("bot.advanced_open" if self.adv_open else "bot.advanced"))
-            self.adv.grid() if self.adv_open else self.adv.grid_remove()
+        self.adv_btn.configure(text=t("bot.advanced_open" if self.adv_open else "bot.advanced"))
+        if self.adv_open:
+            self.upgrade_options.grid()
         else:
-            self.adv_btn.grid_remove()
+            self.upgrade_options.grid_remove()
+        if level == "advanced" and self.adv_open:
+            self.adv.grid()
+        else:
             self.adv.grid_remove()
 
     def _reset_auto(self) -> None:

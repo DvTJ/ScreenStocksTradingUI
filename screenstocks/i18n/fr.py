@@ -778,7 +778,7 @@ STRINGS = {
     'bot.d.upgrade_payback_min': "Seulement les améliorations qui, selon l'estimation du bot, rapportent leur prix en ce nombre de minutes.",
     'bot.p.upgrade_max_pct': 'Améliorations : budget par heure (% du cash)',
     'bot.d.upgrade_max_pct': "Tous les achats d'améliorations de la dernière heure coûtent ensemble au plus cette part de votre cash.",
-    'bot.upg.bought': 'amélioration {name} achetée (niveau {level}) pour {price} – environ +{gain}/min, rentabilisée en {payback}',
+    'bot.upg.batch': '{name} : niveau {start} → {end} ({count} achats) · coût {price} · env. +{gain}/min · rentabilité en {payback}',
     'bot.upg.failed': "impossible d'acheter l'amélioration {name} ({error}) ; nouvel essai dans 10 minutes",
     'bot.upg.no_extension': 'extension améliorations non installée',
     'tab.leaderboard': '  Classement  ',

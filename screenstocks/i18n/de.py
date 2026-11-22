@@ -757,7 +757,7 @@ STRINGS = {
     'bot.d.upgrade_payback_min': 'Nur Upgrades, die nach Schätzung des Bots ihren Preis innerhalb so vieler Minuten wieder einbringen.',
     'bot.p.upgrade_max_pct': 'Upgrades: Budget pro Stunde (% des Cashs)',
     'bot.d.upgrade_max_pct': 'Alle Upgrade-Käufe der letzten Stunde zusammen kosten höchstens diesen Anteil deines Cashs.',
-    'bot.upg.bought': 'Upgrade {name} gekauft (Stufe {level}) für {price} – etwa +{gain}/Min., bezahlt sich in {payback}',
+    'bot.upg.batch': '{name}: Stufe {start} → {end} ({count} Käufe) · Kosten {price} · geschätzt +{gain}/Min. · Amortisation {payback}',
     'bot.upg.failed': 'Upgrade {name} konnte nicht gekauft werden ({error}); neuer Versuch in 10 Minuten',
     'bot.upg.no_extension': 'Upgrade-Erweiterung nicht installiert',
     'tab.leaderboard': '  Rangliste  ',

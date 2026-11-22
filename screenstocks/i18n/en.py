@@ -757,7 +757,7 @@ STRINGS = {
     'bot.d.upgrade_payback_min': "Only upgrades that, by the bot's estimate, earn their price back within this many minutes.",
     'bot.p.upgrade_max_pct': 'Upgrades: budget per hour (% of cash)',
     'bot.d.upgrade_max_pct': 'All upgrade purchases of the last hour together cost at most this share of your cash.',
-    'bot.upg.bought': 'bought upgrade {name} (level {level}) for {price} - about +{gain}/min, pays back in {payback}',
+    'bot.upg.batch': '{name}: level {start} → {end} (levels bought: {count}) · cost {price} · est. +{gain}/min · payback {payback}',
     'bot.upg.failed': 'could not buy upgrade {name} ({error}); tries again in 10 minutes',
     'bot.upg.no_extension': 'upgrade extension not installed',
     'tab.leaderboard': '  Leaderboard  ',

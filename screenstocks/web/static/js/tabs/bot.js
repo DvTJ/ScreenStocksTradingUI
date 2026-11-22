@@ -45,20 +45,26 @@
             <label class="switch only-medium"><input type="checkbox" data-f="shorts"><span class="track"></span>${esc(t("bot.shorts"))} ${info("shorts")}</label>
             <label class="switch only-medium"><input type="checkbox" data-f="trade_events"><span class="track"></span>${esc(t("bot.trade_events"))} ${info("trade_events")}</label>
             <label class="switch"><input type="checkbox" data-f="upgrades_only"><span class="track"></span>${esc(t("bot.upgrades_only"))} ${info("upgrades_only")}</label>
-            <label class="switch ${hideExt}"><input type="checkbox" data-f="repeat_upgrades"><span class="track"></span>${esc(t("bot.repeat_upgrades"))} ${info("repeat_upgrades")}</label>
-            <div class="field ${hideExt}"><label>${esc(t("bot.upgrades_per_pass"))}</label><input class="in num" type="number" min="1" max="1000" data-f="upgrades_per_pass"></div>
             <label class="switch ${hideExt}"><input type="checkbox" data-f="buy_upgrades"><span class="track"></span>${esc(t("bot.buy_upgrades"))} ${info("buy_upgrades")}
               <span class="upg-state" data-role="upg-state"></span></label>
           </div>
-          <details class="bot-adv only-advanced" data-role="adv"><summary>${esc(t("bot.advanced").replace(/^[▸▾]\s*/, ""))}</summary>
+          <details class="bot-adv ${hideExt ? "only-advanced" : ""}" data-role="adv"><summary>${esc(t("bot.advanced").replace(/^[▸▾]\s*/, ""))}</summary>
+            <div class="bset ${hideExt}">
+            <label class="switch ${hideExt}"><input type="checkbox" data-f="repeat_upgrades"><span class="track"></span>${esc(t("bot.repeat_upgrades"))} ${info("repeat_upgrades")}</label>
+            <div class="field ${hideExt}"><label>${esc(t("bot.upgrades_per_pass"))}</label><input class="in num" type="number" min="1" max="1000" data-f="upgrades_per_pass"></div>
+            </div>
+            <div class="padv ${hideExt}">
+              ${["upgrade_payback_min", "upgrade_max_pct"].map((k) => `<label>${esc(t(`bot.p.${k}`))} ${info(k)}</label>
+                <input class="in num" type="text" inputmode="decimal" data-f="${k}"><span></span>`).join("")}</div>
+            <div class="only-advanced">
             <div class="padv">${PARAMS.map((k) => adv(k, STEP[k])).join("")}
               <label>${esc(t("bot.p.recalib_min"))} ${info("recalib_min")}</label><input class="in num" type="text" inputmode="numeric" data-f="recalib_min"><span></span>
               <label>${esc(t("bot.p.loss_limit_pct"))} ${info("loss_limit_pct")}</label><input class="in num" type="text" inputmode="decimal" data-f="loss_limit_pct"><span></span>
-              ${["upgrade_payback_min", "upgrade_max_pct"].map((k) => `<label class="${hideExt}">${esc(t(`bot.p.${k}`))} ${info(k)}</label>
-                <input class="in num ${hideExt}" type="text" inputmode="decimal" data-f="${k}"><span class="${hideExt}"></span>`).join("")}</div>
+            </div>
             <button class="btn ghost" data-role="reset">${esc(t("bot.reset_auto"))}</button>
             <div style="margin-top:12px"><label>${esc(t("bot.stocks_traded"))}</label></div>
             <div class="stock-checks" data-role="stocks"></div>
+            </div>
           </details>
         </section>
 
